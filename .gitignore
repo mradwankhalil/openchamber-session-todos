@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Local previews and dev installs
+preview/
+dev-copy/
+
+# Backups
+backup-*/
+*.bak-*
+*.session-todos.bak
+
+# Editor, agent and host state: none of this ships
+.claude/
+.codegraph/
+.impeccable/
+.omo/
+.opencode/
+.openchamber/
+.vscode/
+.idea/
+research_notes/
+sub-agents-reports/
+work-*-CHECKPOINT.md
+
+# OS
+.DS_Store
+Thumbs.db

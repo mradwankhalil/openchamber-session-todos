@@ -1,7 +1,7 @@
 import type { GuestSessionRecord } from '@openchamber/sdk';
 
 import { h, icon } from '../../shared/dom.ts';
-import { CHATS_PROJECT, EMPTY_MARKS, applyMarks, buildTree, countViews, elapsedLabel, groupTodos, liveFamilies, needsYou, quietNotice, resolveDepth, type Todo, type TreeNode } from '../../shared/model.ts';
+import { CHATS_PROJECT, EMPTY_MARKS, applyMarks, buildTree, countViews, elapsedLabel, groupTodos, liveFamilies, needsYou, pruneTree, quietNotice, resolveDepth, type Todo, type TreeNode } from '../../shared/model.ts';
 import { progressBar, todoRow } from '../../shared/rows.ts';
 import type { App } from '../app.ts';
 import { indentStyle, pageTop, rails, treed } from './parts.ts';
@@ -108,7 +108,9 @@ export const viewOverview = (app: Pick<App, 'state' | 'actions' | 'feed' | 'work
   const rowsFor = (node: Node, level: number): HTMLElement[] => (state.overviewMode === 'open' ? openRows(node, level) : sessionRows(node, level));
 
   const byRecent = (left: GuestSessionRecord, right: GuestSessionRecord): number => right.updatedAt - left.updatedAt;
-  const treeOf = (sessions: GuestSessionRecord[]): Node[] => buildTree([...sessions].sort(byRecent), depth);
+  // A subagent earns a row with a todo list, or by waiting on you.
+  const treeOf = (sessions: GuestSessionRecord[]): Node[] => buildTree([...sessions].sort(byRecent), depth)
+    .map((node) => ({ ...node, children: pruneTree(node.children, (session) => todosOf(session.id).length > 0 || needsYou(session.activity)) }));
   const tally = (sessions: GuestSessionRecord[]): HTMLElement | null => {
     let done = 0;
     let total = 0;

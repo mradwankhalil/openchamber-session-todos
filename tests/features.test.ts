@@ -8,6 +8,8 @@ import {
   descendants,
   droppedItems,
   filterViews,
+  pruneTree,
+  subagentsFor,
   findRefs,
   itemHistory,
   itemKey,
@@ -222,6 +224,55 @@ describe('projectForFolder', () => {
   });
   test('a name that only starts the same is not a match', () => {
     expect(projectForFolder('C:/work/app2', projects)).toBeUndefined();
+  });
+});
+
+describe('subagentsFor', () => {
+  const views = (...todos: Todo[]) => applyMarks(todos, { ticks: {}, notes: {} }, false);
+  const child = (id: string, depth: number, ...todos: Todo[]) => ({ id, depth, todos: views(...todos) });
+  const names = (list: { content: string }[]) => list.map((item) => item.content);
+  const mixed = child('mixed', 1, t('finished', 'completed'), t('working', 'in_progress'), t('next'), t('dropped', 'cancelled'));
+
+  test('one subagent of each state shows in Open and in Done, with only its own part', () => {
+    const [open] = subagentsFor([mixed], 'open');
+    expect(names(open?.shown ?? [])).toEqual(['working', 'next']);
+    expect(names(open?.tucked ?? [])).toEqual(['dropped']);
+    const [done] = subagentsFor([mixed], 'done');
+    expect(names(done?.shown ?? [])).toEqual(['finished']);
+    expect(done?.tucked).toEqual([]);
+  });
+  test('a finished subagent leaves Open and shows in Done', () => {
+    const finished = child('finished', 1, t('a', 'completed'));
+    expect(subagentsFor([finished], 'open')).toEqual([]);
+    expect(subagentsFor([finished], 'done').map((row) => row.id)).toEqual(['finished']);
+  });
+  test('one with nothing open or finished is in neither, but stays in All', () => {
+    const cancelled = child('cancelled', 1, t('a', 'cancelled'));
+    expect(subagentsFor([cancelled], 'open')).toEqual([]);
+    expect(subagentsFor([cancelled], 'done')).toEqual([]);
+    expect(names(subagentsFor([cancelled], 'all')[0]?.shown ?? [])).toEqual(['a']);
+  });
+  test('a parent with no match stays empty to lead to a child that has one', () => {
+    const rows = subagentsFor([child('parent', 1, t('a', 'completed')), child('kid', 2, t('b')), child('other', 1, t('c', 'completed'))], 'open');
+    expect(rows.map((row) => [row.id, row.shown.length])).toEqual([['parent', 0], ['kid', 1]]);
+  });
+});
+
+describe('filterViews and cancelled items', () => {
+  const views = applyMarks([t('a'), t('b', 'cancelled'), t('c', 'completed')], { ticks: {}, notes: {} }, false);
+  test('cancelled sits with Open, not Done', () => {
+    expect(filterViews(views, 'open', '').map((v) => v.content)).toEqual(['a', 'b']);
+    expect(filterViews(views, 'done', '').map((v) => v.content)).toEqual(['c']);
+  });
+});
+
+describe('pruneTree', () => {
+  const n = (item: string, ...children: { item: string; children: never[] }[]) => ({ item, children });
+  test('drops what fails, but keeps what leads to something kept', () => {
+    const tree = [n('keep'), n('drop'), { item: 'lead', children: [n('keep below')] }];
+    const kept = pruneTree(tree as never, (item: string) => item.startsWith('keep')) as unknown as { item: string; children: { item: string }[] }[];
+    expect(kept.map((node) => node.item)).toEqual(['keep', 'lead']);
+    expect(kept[1]?.children.map((node) => node.item)).toEqual(['keep below']);
   });
 });
 

@@ -10,6 +10,7 @@ import {
   descendants,
   droppedItems,
   filterViews,
+  subagentsFor,
   groupTodos,
   isRecord,
   liveFamilies,
@@ -564,10 +565,11 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     }
 
     // Other sessions' lists: visibly separate, each with its own label.
-    if (state.children.length > 0 && state.filter !== 'done' && !state.query) {
-      list.push(h('div', { class: 'ghead g-sub' }, h('span', { class: 'car' }, icon('tree')), 'Subagent lists', h('span', { class: 'n' }, String(state.children.length))));
+    const subagents = subagentsFor(state.children, state.filter);
+    if (subagents.length > 0 && !state.query) {
+      list.push(h('div', { class: 'ghead g-sub' }, h('span', { class: 'car' }, icon('tree')), 'Subagent lists', h('span', { class: 'n' }, String(subagents.filter((child) => child.shown.length > 0).length))));
       let hideBelow = Infinity;
-      state.children.forEach((child) => {
+      subagents.forEach((child) => {
         if (child.depth > hideBelow) return;
         hideBelow = Infinity;
         const key = `child:${child.id}`;
@@ -580,7 +582,14 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
           childCounts.total > 0 ? h('span', { class: 'mini' }, progressBar(childCounts)) : null,
           childCounts.total > 0 ? h('span', { class: 'num small' }, `${childCounts.done}/${childCounts.total}`) : null)));
         if (open) {
-          for (const item of child.todos) list.push(treed(child.depth + 1, todoRow(item, { oneLine: true, tags: settings.tags ? 'show' : 'raw', markPriority: false })));
+          const line = (item: TodoView, depth: number): HTMLElement => treed(depth, todoRow(item, { oneLine: true, tags: settings.tags ? 'show' : 'raw', markPriority: false }));
+          for (const item of child.shown) list.push(line(item, child.depth + 1));
+          if (child.tucked.length > 0) {
+            const tuckKey = `${key}:cancelled`;
+            const tuckOpen = state.folds[tuckKey] ?? false;
+            list.push(treed(child.depth + 1, h('button', { type: 'button', class: 'ghead', 'aria-expanded': String(tuckOpen), onClick: () => actions.setFold(tuckKey, !tuckOpen) }, h('span', { class: 'car' }, icon('caret')), 'Cancelled', h('span', { class: 'n' }, String(child.tucked.length)))));
+            if (tuckOpen) for (const item of child.tucked) list.push(line(item, child.depth + 2));
+          }
           list.push(treed(child.depth + 1, h('button', { type: 'button', class: 'more', style: 'padding-left:6px', onClick: () => actions.openSession(child.id) }, 'Open this session')));
         }
       });

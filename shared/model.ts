@@ -261,6 +261,12 @@ export const projectForFolder = <P extends { directory: string }>(directory: str
 export type TreeNode<T> = { item: T; children: TreeNode<T>[] };
 
 /** Top-level items, each with its children below, to `maxDepth` levels. A parent outside the set makes its child top-level. */
+/** Drops what `keep` refuses, unless something kept is below it. */
+export const pruneTree = <T>(nodes: TreeNode<T>[], keep: (item: T) => boolean): TreeNode<T>[] => nodes.flatMap((node) => {
+  const children = pruneTree(node.children, keep);
+  return keep(node.item) || children.length > 0 ? [{ item: node.item, children }] : [];
+});
+
 export const buildTree = <T extends { id: string; parentId: string | null }>(items: T[], maxDepth: number): TreeNode<T>[] => {
   const ids = new Set(items.map((item) => item.id));
   const under = new Map<string, T[]>();
@@ -371,10 +377,31 @@ export const filterViews = (views: TodoView[], filter: Filter, query: string): T
   const needle = query.trim().toLowerCase();
   return views.filter((view) => {
     if (needle && !view.content.toLowerCase().includes(needle)) return false;
-    if (filter === 'open') return !isDoneView(view);
-    if (filter === 'done') return isDoneView(view);
+    // Cancelled work sits with Open, folded. Done means finished.
+    if (filter === 'open') return view.status === 'cancelled' || !isDoneView(view);
+    if (filter === 'done') return isDoneView(view) && view.status !== 'cancelled';
     return true;
   });
+};
+
+export type SubagentRow<T> = T & { shown: TodoView[]; tucked: TodoView[] };
+
+/**
+ * The subagents a filter lists. Open needs work left, Done needs finished work; cancelled
+ * items alone match neither. One with no match stays, empty, only to lead to one below it.
+ */
+export const subagentsFor = <T extends { depth: number; todos: TodoView[] }>(children: T[], filter: Filter): SubagentRow<T>[] => {
+  const kept: SubagentRow<T>[] = [];
+  // Parents come before children, so from the end.
+  for (const child of [...children].reverse()) {
+    const matches = filterViews(child.todos, filter, '');
+    const tucked = filter === 'open' ? matches.filter((view) => view.status === 'cancelled') : [];
+    const shown = filter === 'open' ? matches.filter((view) => view.status !== 'cancelled') : matches;
+    const leads = (kept[0]?.depth ?? 0) > child.depth;
+    if (shown.length > 0) kept.unshift({ ...child, shown, tucked });
+    else if (leads) kept.unshift({ ...child, shown: [], tucked: [] });
+  }
+  return kept;
 };
 
 // ----- Export -----

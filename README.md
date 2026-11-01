@@ -44,7 +44,7 @@ What is happening and what comes next, in one look. Choose **At a glance** or **
 
 ![Every session, grouped by what needs you](docs/screenshots/every-session.png)
 
-Open it from the layers icon at the top of the panel. Sessions are grouped by project and by what they need: waiting on you first, then active ones. The view covers sessions active in the last 7 days, and you can change that from 1 to 90.
+Open it from the layers icon at the top of the panel. Sessions are grouped by project and by what they need: waiting on you first, then active ones. A subagent is listed only if it has a todo list or is waiting on you. The view covers sessions active in the last 7 days, and you can change that from 1 to 90.
 
 ![All open todos across sessions](docs/screenshots/open-todos.png)
 
@@ -148,7 +148,7 @@ The version you are running is shown at the top left of the panel.
 
 - **Open a session.** The panel and the sidebar section follow it.
 - **Click a row** to see its full text and details.
-- **Filter** with All, Open or Done, or type in the filter box.
+- **Filter** with All, Open or Done, or type in the filter box. Subagents follow the filter: Open lists those with work left and shows only that work, with cancelled items folded; Done lists those with finished items and shows only those.
 - **Fold** subagents and groups. Top-level sessions start open and sub-sessions start folded.
 - **Use the icons at the top of the panel:** This session, History, Every session and Settings.
 

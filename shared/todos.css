@@ -134,6 +134,8 @@ html[data-motion="off"] ::view-transition-group(*) { animation: none !important;
 .foot { display: flex; align-items: center; gap: 6px; width: 100%; min-height: var(--todo-row); padding: 0 6px; color: var(--muted); font-size: .93em; border-radius: 6px; }
 .foot:hover { background: var(--hover); }
 .foot svg { color: var(--faint); }
+.foot .car { display: grid; place-items: center; width: 1em; flex: none; transition: transform .16s; }
+.foot[aria-expanded="false"] .car { transform: rotate(-90deg); }
 
 /* Panel */
 .panel { container-type: inline-size; min-height: 100vh; }

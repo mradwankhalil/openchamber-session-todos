@@ -1,4 +1,4 @@
-import { GUEST_STATUS_SECTION_HEIGHT_MAX, connectHost, type GuestSessionRecord, type SessionSnapshot } from '@openchamber/sdk';
+import { GUEST_STATUS_SECTION_HEIGHT_MAX, connectHost, type SessionSnapshot } from '@openchamber/sdk';
 import { applyHostReady, mountPopoverAnchor } from '@openchamber/sdk/ui';
 
 import { h, icon } from '../shared/dom.ts';
@@ -6,10 +6,7 @@ import { createFeed, service } from '../shared/feed.ts';
 import {
   EMPTY_MARKS,
   applyMarks,
-  isRecord,
-  looseSession,
   countViews,
-  descendants,
   groupTodos,
   mixedPriorities,
   needsYou,
@@ -17,8 +14,6 @@ import {
   planVisible,
   quietNotice,
   readMarks,
-  readTodos,
-  resolveDepth,
   todosForSession,
   type FoldChoice,
   type GroupPlan,
@@ -46,7 +41,7 @@ let tips = false;
 let drawn = '';
 let marks: Marks = EMPTY_MARKS;
 let folds: Folds = {};
-let subagentLists = 0;
+let lastSession: string | null = null;
 let attention: ReturnType<typeof quietNotice> = null;
 // Opening a list past its budget lasts until the session changes.
 const showAll = { next: false, done: false };
@@ -66,13 +61,15 @@ const measureLines = (() => {
 
 const feed = createFeed(host, (reason) => {
   if (reason === 'session') {
-    showAll.next = false;
-    showAll.done = false;
-    unclamped.clear();
-    subagentLists = 0;
-    attention = null;
+    const id = feed.session?.id ?? null;
+    if (id !== lastSession) {
+      lastSession = id;
+      showAll.next = false;
+      showAll.done = false;
+      unclamped.clear();
+      attention = null;
+    }
     void refreshMarks();
-    void refreshSubagents();
   }
   if (reason === 'settings') {
     applySettings(feed.settings, 'section');
@@ -94,32 +91,6 @@ const refreshMarks = async (): Promise<void> => {
     folds = readFolds(rawFolds);
     draw();
   } catch { /* keep what we have */ }
-};
-
-const refreshSubagents = async (): Promise<void> => {
-  const id = feed.session?.id;
-  if (!id) return;
-  try {
-    const answer = await service(host, '/v1/children', { sessionId: id, directory: feed.directory });
-    if (feed.session?.id !== id) return;
-    const parents: Record<string, unknown> = { ...(isRecord(answer.parents) ? answer.parents : {}) };
-    const everyone = await service(host, '/v1/sessions').catch(() => null);
-    if (feed.session?.id !== id) return;
-    const others = Array.isArray(everyone?.sessions) ? everyone.sessions.flatMap((raw) => looseSession(raw) ?? []) : [];
-    for (const session of [...others, ...hostSessions]) if (session.parentId) parents[session.id] = session.parentId;
-    const depth = resolveDepth(feed.settings.subagentDepth, typeof answer.depth === 'number' ? answer.depth : null);
-    const tree = descendants(id, parents, depth);
-    let next = 0;
-    if (tree.length > 0) {
-      const lists = await service(host, '/v1/lists', { sessions: tree.map((item) => ({ id: item.id, directory: [...hostSessions, ...others].find((session) => session.id === item.id)?.directory ?? feed.directory })) });
-      if (feed.session?.id !== id) return;
-      if (isRecord(lists.lists)) next = Object.values(lists.lists).filter((entry) => isRecord(entry) && entry.status === 'ok' && readTodos(entry.todos).length > 0).length;
-    }
-    if (next !== subagentLists) {
-      subagentLists = next;
-      draw();
-    }
-  } catch { /* the count is a bonus */ }
 };
 
 const saveFold = (key: string, open: boolean): void => {
@@ -160,14 +131,14 @@ const header = (parent: DocumentFragment, views: TodoView[]): void => {
 
 const footer = (views: TodoView[], counts: ReturnType<typeof countViews>): HTMLElement => {
   const open = folds.done === true;
-  const parts = [counts.done > 0 ? `${counts.done} done` : '', counts.mine > 0 ? `${counts.mine} by you` : '', subagentLists > 0 && counts.done + counts.mine === 0 ? 'Subagent lists' : ''].filter(Boolean).join(' · ');
+  const parts = [counts.done > 0 ? `${counts.done} done` : '', counts.mine > 0 ? `${counts.mine} by you` : ''].filter(Boolean).join(' · ');
   return h('button', {
     type: 'button',
     class: 'foot',
     'aria-expanded': String(open),
-    title: `${open ? 'Fold' : 'Show'} finished items${subagentLists ? `. ${subagentLists} subagent lists are in the panel.` : ''}`,
+    title: `${open ? 'Fold' : 'Show'} finished items`,
     onClick: () => saveFold('done', !open),
-  }, icon('check'), h('span', { class: 'grow' }, parts), subagentLists > 0 ? icon('tree') : null, subagentLists > 0 ? h('span', { class: 'num', title: `${subagentLists} subagent lists` }, String(subagentLists)) : null);
+  }, counts.done > 0 ? h('span', { class: 'car' }, icon('caret')) : icon('check'), h('span', { class: 'grow' }, parts));
 };
 
 // The default: what needs you, what is happening, what is next.
@@ -193,10 +164,10 @@ const drawGlance = (parent: DocumentFragment, views: TodoView[]): void => {
       onClick: () => { showAll.next = true; draw(true); },
     }, `${groups.pending.length - limit} more`));
   }
+  if (counts.done + counts.mine > 0) parent.append(footer(views, counts));
   if (folds.done === true) {
     for (const view of [...groups.completed, ...groups.cancelled]) parent.append(row(view, true, false));
   }
-  if (counts.done + counts.mine > 0 || subagentLists > 0) parent.append(footer(views, counts));
 };
 
 // The older layout: headed groups that fold.
@@ -252,7 +223,7 @@ const drawGroups = (parent: DocumentFragment, views: TodoView[]): void => {
 const draw = (force = false): void => {
   if (isTip) return;
   const view = feed.view;
-  const signature = JSON.stringify([view, feed.session, feed.settings, marks, folds, subagentLists, attention, showAll, [...unclamped], tips]);
+  const signature = JSON.stringify([view, feed.session, feed.settings, marks, folds, attention, showAll, [...unclamped], tips]);
   if (!force && signature === drawn) return;
   drawn = signature;
   for (const anchor of anchors.splice(0)) anchor.dispose();
@@ -281,7 +252,6 @@ const refreshAttention = async (): Promise<void> => {
   if (!id || !workspaceProject) return;
   try {
     const snapshot = await host.listSessions(workspaceProject);
-    hostSessions = snapshot.sessions;
     const record = snapshot.sessions.find((session) => session.id === id);
     if (feed.session?.id !== id) return;
     const lists: Todo[] = feed.view.kind === 'list' ? feed.view.todos : [];
@@ -301,7 +271,6 @@ const tell = async (id: string, title: string, updatedAt: number): Promise<void>
 };
 
 let workspaceProject: string | null = null;
-let hostSessions: GuestSessionRecord[] = [];
 const findProject = async (): Promise<void> => {
   const directory = feed.directory;
   try {
@@ -365,7 +334,6 @@ if (preview) {
     window.setInterval(() => {
       if (document.visibilityState === 'hidden') return;
       void refreshMarks();
-      void refreshSubagents();
       void (workspaceProject ? refreshAttention() : findProject().then(refreshAttention));
     }, MARKS_EVERY_MS);
   });

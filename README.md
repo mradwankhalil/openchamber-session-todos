@@ -58,7 +58,7 @@ Open it from the layers icon at the top of the panel. Sessions are grouped by pr
 
 ![The history of a list, with dropped items](docs/screenshots/history.png)
 
-Each version of a list is kept on your computer. Replay how a plan changed, and see **items dropped without a word**: things an agent removed from its list without finishing or cancelling them.
+Each version of a list is kept on your computer. Replay how a plan changed, and see **items dropped without a word**: things an agent removed from its list without finishing or cancelling them. Under the **Open** filter they fold to one line with a count.
 
 ### Your own marks
 

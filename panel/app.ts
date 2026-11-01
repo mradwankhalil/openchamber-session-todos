@@ -523,8 +523,10 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
 
     const gone = state.filter === 'done' ? [] : dropped().filter((item) => !state.query || item.content.toLowerCase().includes(state.query.toLowerCase()));
     if (gone.length > 0) {
-      const open = actions.isOpen('dropped', true);
-      list.push(h('button', { type: 'button', class: 'ghead g-attn', 'aria-expanded': String(open), title: 'Items the agent had open that left its list', onClick: () => actions.setFold('dropped', !open) }, h('span', { class: 'car' }, icon('caret')), 'Dropped without a word', h('span', { class: 'n' }, String(gone.length))));
+      // Under Open it is one line: these items are not open work, but losing them is worth a look.
+      const foldKey = state.filter === 'open' ? 'dropped-open' : 'dropped';
+      const open = actions.isOpen(foldKey, state.filter !== 'open');
+      list.push(h('button', { type: 'button', class: 'ghead g-attn', 'aria-expanded': String(open), title: 'Items the agent had open that left its list', onClick: () => actions.setFold(foldKey, !open) }, h('span', { class: 'car' }, icon('caret')), 'Dropped without a word', h('span', { class: 'n' }, String(gone.length))));
       if (open) {
         list.push(h('div', { class: 'gitems' }, ...gone.map((item) => h('div', { class: 'row cancelled gone' }, h('span', { class: 'glyph' }, icon('gone')), h('span', { class: 'body' }, h('span', { class: 'txt' }, item.content)), h('button', { type: 'button', class: 'ref', title: 'Put a question in the message box', onClick: () => actions.askWhy(item) }, 'Ask why')))));
       }
@@ -565,13 +567,11 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     if (state.children.length > 0 && state.filter !== 'done' && !state.query) {
       list.push(h('div', { class: 'ghead g-sub' }, h('span', { class: 'car' }, icon('tree')), 'Subagent lists', h('span', { class: 'n' }, String(state.children.length))));
       let hideBelow = Infinity;
-      state.children.forEach((child, at) => {
+      state.children.forEach((child) => {
         if (child.depth > hideBelow) return;
         hideBelow = Infinity;
         const key = `child:${child.id}`;
-        // A subagent that started others opens by default, so the tree can be seen.
-        const hasKids = (state.children[at + 1]?.depth ?? 0) > child.depth;
-        const open = state.folds[key] ?? hasKids;
+        const open = state.folds[key] ?? false;
         if (!open) hideBelow = child.depth;
         const childCounts = countViews(child.todos);
         list.push(treed(child.depth, h('button', { type: 'button', class: 'subhead', 'aria-expanded': String(open), title: child.depth > 1 ? `Level ${child.depth} subagent` : undefined, onClick: () => actions.setFold(key, !open) },

@@ -261,6 +261,34 @@ export const projectForFolder = <P extends { directory: string }>(directory: str
 export type TreeNode<T> = { item: T; children: TreeNode<T>[] };
 
 /** Top-level items, each with its children below, to `maxDepth` levels. A parent outside the set makes its child top-level. */
+/**
+ * Splits subagent rows (parents directly before their children) into Active and Idle, newest
+ * first. A subagent stays under its parent, so a parent counts as active and recent if anything
+ * below it is. Waiting on you counts as active.
+ */
+export const subagentSections = <T extends { depth: number; activity: string; updatedAt: number }>(rows: T[]): { active: T[]; idle: T[] } => {
+  type Family = { row: T; kids: Family[]; active: boolean; recent: number };
+  const top: Family[] = [];
+  const path: Family[] = [];
+  for (const row of rows) {
+    const family: Family = { row, kids: [], active: false, recent: 0 };
+    while ((path.at(-1)?.row.depth ?? 0) >= row.depth) path.pop();
+    (path.at(-1)?.kids ?? top).push(family);
+    path.push(family);
+  }
+  const settle = (family: Family): void => {
+    family.kids.forEach(settle);
+    family.kids.sort((left, right) => right.recent - left.recent);
+    const { activity, updatedAt } = family.row;
+    family.active = activity === 'running' || activity === 'retrying' || needsYou(activity) || family.kids.some((kid) => kid.active);
+    family.recent = Math.max(updatedAt, ...family.kids.map((kid) => kid.recent));
+  };
+  top.forEach(settle);
+  top.sort((left, right) => right.recent - left.recent);
+  const flat = (family: Family): T[] => [family.row, ...family.kids.flatMap(flat)];
+  return { active: top.filter((family) => family.active).flatMap(flat), idle: top.filter((family) => !family.active).flatMap(flat) };
+};
+
 /** Drops what `keep` refuses, unless something kept is below it. */
 export const pruneTree = <T>(nodes: TreeNode<T>[], keep: (item: T) => boolean): TreeNode<T>[] => nodes.flatMap((node) => {
   const children = pruneTree(node.children, keep);

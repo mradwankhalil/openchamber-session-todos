@@ -9,6 +9,7 @@ import {
   droppedItems,
   filterViews,
   pruneTree,
+  subagentSections,
   subagentsFor,
   findRefs,
   itemHistory,
@@ -255,6 +256,27 @@ describe('subagentsFor', () => {
   test('a parent with no match stays empty to lead to a child that has one', () => {
     const rows = subagentsFor([child('parent', 1, t('a', 'completed')), child('kid', 2, t('b')), child('other', 1, t('c', 'completed'))], 'open');
     expect(rows.map((row) => [row.id, row.shown.length])).toEqual([['parent', 0], ['kid', 1]]);
+  });
+});
+
+describe('subagentSections', () => {
+  const row = (id: string, depth: number, activity: string, updatedAt: number) => ({ id, depth, activity, updatedAt });
+  const ids = (rows: { id: string }[]) => rows.map((item) => item.id);
+
+  test('splits working from idle, the most recent first', () => {
+    const { active, idle } = subagentSections([row('old idle', 1, 'idle', 1), row('old run', 1, 'running', 2), row('new idle', 1, 'idle', 3), row('new run', 1, 'running', 4)]);
+    expect(ids(active)).toEqual(['new run', 'old run']);
+    expect(ids(idle)).toEqual(['new idle', 'old idle']);
+  });
+  test('retrying and waiting on you count as active; unknown does not', () => {
+    const { active, idle } = subagentSections([row('r', 1, 'retrying', 1), row('p', 1, 'waiting-permission', 2), row('q', 1, 'waiting-question', 3), row('u', 1, 'unknown', 4)]);
+    expect(ids(active)).toEqual(['q', 'p', 'r']);
+    expect(ids(idle)).toEqual(['u']);
+  });
+  test('a subagent stays under its parent, which takes its state and time', () => {
+    const { active, idle } = subagentSections([row('parent', 1, 'idle', 1), row('kid idle', 2, 'idle', 2), row('kid run', 2, 'running', 9), row('other', 1, 'running', 5), row('quiet', 1, 'idle', 3)]);
+    expect(ids(active)).toEqual(['parent', 'kid run', 'kid idle', 'other']);
+    expect(ids(idle)).toEqual(['quiet']);
   });
 });
 

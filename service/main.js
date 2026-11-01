@@ -74,7 +74,7 @@ var DEFAULTS = {
   sectionColorDone: "#a3a1a9",
   sectionColorAttention: "#e6a457",
   motion: true,
-  sectionLayout: "glance",
+  sectionLayout: "groups",
   sectionRows: 5,
   sectionTags: false,
   sectionWho: true,

@@ -10,6 +10,7 @@ import {
   descendants,
   droppedItems,
   filterViews,
+  subagentSections,
   subagentsFor,
   groupTodos,
   isRecord,
@@ -67,7 +68,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     revisions: [] as Revision[],
     replayAt: -1,
     backlog: [] as BacklogItem[],
-    children: [] as { id: string; title: string; agent: string; activity: string; depth: number; todos: TodoView[] }[],
+    children: [] as { id: string; title: string; agent: string; activity: string; updatedAt: number; depth: number; todos: TodoView[] }[],
     configuredDepth: null as number | null,
     otherSessions: [] as GuestSessionRecord[],
     ownState: null as SessionState | null,
@@ -178,7 +179,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
         const todos = isRecord(entry) && entry.status === 'ok' ? readTodos(entry.todos) : [];
         const record = workspace.byId(child) ?? state.otherSessions.find((other) => other.id === child);
         const title = record?.title || (isRecord(entry) && typeof entry.title === 'string' && entry.title) || todos[0]?.content || child;
-        return { id: child, title, agent: isRecord(entry) && typeof entry.agent === 'string' ? entry.agent : '', activity: record?.activity ?? 'unknown', depth: depthOf.get(child) ?? 1, todos: applyMarks(todos, EMPTY_MARKS, false) };
+        return { id: child, title, agent: isRecord(entry) && typeof entry.agent === 'string' ? entry.agent : '', activity: record?.activity ?? 'unknown', updatedAt: Math.max(record?.updatedAt ?? 0, isRecord(entry) && typeof entry.at === 'number' ? entry.at : 0), depth: depthOf.get(child) ?? 1, todos: applyMarks(todos, EMPTY_MARKS, false) };
       });
       // Parents come before children, so from the end: keep a list, and whoever leads to one.
       const kept: typeof everyone = [];
@@ -565,11 +566,11 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     }
 
     // Other sessions' lists: visibly separate, each with its own label.
-    const subagents = subagentsFor(state.children, state.filter);
-    if (subagents.length > 0 && !state.query) {
-      list.push(h('div', { class: 'ghead g-sub' }, h('span', { class: 'car' }, icon('tree')), 'Subagent lists', h('span', { class: 'n' }, String(subagents.filter((child) => child.shown.length > 0).length))));
+    const subagentSection = (label: string, rows: ReturnType<typeof subagentsFor<(typeof state.children)[number]>>): void => {
+      if (rows.length === 0) return;
+      list.push(h('div', { class: 'ghead g-sub' }, h('span', { class: 'car' }, icon('tree')), label, h('span', { class: 'n' }, String(rows.filter((child) => child.shown.length > 0).length))));
       let hideBelow = Infinity;
-      subagents.forEach((child) => {
+      rows.forEach((child) => {
         if (child.depth > hideBelow) return;
         hideBelow = Infinity;
         const key = `child:${child.id}`;
@@ -593,6 +594,11 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
           list.push(treed(child.depth + 1, h('button', { type: 'button', class: 'more', style: 'padding-left:6px', onClick: () => actions.openSession(child.id) }, 'Open this session')));
         }
       });
+    };
+    if (!state.query) {
+      const sections = subagentSections(subagentsFor(state.children, state.filter));
+      subagentSection('Active subagents', sections.active);
+      subagentSection('Idle subagents', sections.idle);
     }
 
     const selected = all.find((item) => item.key === state.selected) ?? null;

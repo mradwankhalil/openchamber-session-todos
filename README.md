@@ -36,9 +36,9 @@ The list follows the session you have open, and each session keeps its own list.
 
 ### Work Status section
 
-![The sidebar section, at a glance](docs/screenshots/sidebar-section.png)
+![The sidebar section, grouped by status](docs/screenshots/sidebar-section.png)
 
-What is happening and what comes next, in one look. Choose **At a glance** or **Groups** (headed sections that fold) in Settings. Hide, show or move the section from Work Status > Choose sections.
+What is happening and what comes next, in one look, grouped under headings that fold. For a shorter view with no headings, choose **At a glance** in Settings. Hide, show or move the section from Work Status > Choose sections.
 
 ### Every session
 
@@ -148,7 +148,7 @@ The version you are running is shown at the top left of the panel.
 
 - **Open a session.** The panel and the sidebar section follow it.
 - **Click a row** to see its full text and details.
-- **Filter** with All, Open or Done, or type in the filter box. Subagents follow the filter: Open lists those with work left and shows only that work, with cancelled items folded; Done lists those with finished items and shows only those.
+- **Filter** with All, Open or Done, or type in the filter box. Subagents follow the filter: Open lists those with work left and shows only that work, with cancelled items folded; Done lists those with finished items and shows only those. Each filter splits them into **Active subagents** (working, or waiting on you) and **Idle subagents**, with the most recent first. A subagent stays under the one that started it.
 - **Fold** subagents and groups. Top-level sessions start open and sub-sessions start folded.
 - **Use the icons at the top of the panel:** This session, History, Every session and Settings.
 

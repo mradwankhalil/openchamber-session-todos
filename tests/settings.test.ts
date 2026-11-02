@@ -20,12 +20,24 @@ describe('the section has its own look', () => {
     expect(settings.sectionColorActive).toBe('#111111');
   });
 
-  test('a new install: 14 px panel, 12 px section, the same look otherwise', () => {
+  test('a new install: 15 px panel, 13.75 px section, the same look otherwise', () => {
     const settings = readSettings({});
-    expect(settings.textSize).toBe(14);
-    expect(settings.sectionTextSize).toBe(12);
+    expect(settings.textSize).toBe(15);
+    expect(settings.sectionTextSize).toBe(13.75);
     expect(settings.sectionRowHeight).toBe(DEFAULTS.rowHeight);
     expect(settings.sectionColors).toBe(DEFAULTS.colors);
+  });
+
+  test('saved text sizes survive a change to the defaults', () => {
+    const settings = readSettings({ textSize: 14, sectionTextSize: 12 });
+    expect(settings.textSize).toBe(14);
+    expect(settings.sectionTextSize).toBe(12);
+  });
+
+  test('the fractional section default reaches the stylesheet unchanged', () => {
+    const section = fakeRoot();
+    applySettings(readSettings({}), 'section', section.root);
+    expect(section.props.get('--todo-size')).toBe('13.75px');
   });
 
   test('a bad value falls back, and nothing unsafe reaches a style rule', () => {

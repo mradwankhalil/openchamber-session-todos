@@ -53,8 +53,8 @@ export type Settings = {
 };
 
 export const DEFAULTS: Settings = {
-  textSize: 14,
-  sectionTextSize: 12,
+  textSize: 15,
+  sectionTextSize: 13.75,
   sideWidth: 248,
   rowHeight: 'normal',
   font: 'host',

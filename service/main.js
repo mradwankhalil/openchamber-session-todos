@@ -54,8 +54,8 @@ var appendRevision = (revisions, todos, at, source, max = MAX_REVISIONS) => {
 
 // shared/settings.ts
 var DEFAULTS = {
-  textSize: 14,
-  sectionTextSize: 12,
+  textSize: 15,
+  sectionTextSize: 13.75,
   sideWidth: 248,
   rowHeight: "normal",
   font: "host",

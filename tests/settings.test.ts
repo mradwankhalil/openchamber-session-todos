@@ -9,6 +9,15 @@ const fakeRoot = (): { root: HTMLElement; props: Map<string, string>; dataset: R
   return { root: { style, dataset } as unknown as HTMLElement, props, dataset };
 };
 
+describe('sidebar hover', () => {
+  test('is on by default and independent of tags', () => {
+    expect(DEFAULTS.sectionHover).toBe(true);
+    expect(readSettings({ sectionTags: true }).sectionHover).toBe(true);
+    expect(readSettings({ sectionHover: false }).sectionHover).toBe(false);
+    expect(readSettings({ sectionHover: false }).sectionTags).toBe(false);
+  });
+});
+
 describe('the section has its own look', () => {
   test('saved before they were separate, the section keeps the look it had', () => {
     const settings = readSettings({ textSize: 16, rowHeight: 'roomy', font: 'custom', customFont: 'Inter', colors: 'custom', colorActive: '#111111' });

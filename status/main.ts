@@ -106,16 +106,14 @@ const row = (view: TodoView, oneLine: boolean, mark: boolean): HTMLElement => {
     twoLines: !oneLine && !full,
     tags: feed.settings.sectionTags ? 'show' : 'hide',
     markPriority: mark,
+    noHover: true,
   });
   node.addEventListener('click', () => {
     if (full) unclamped.delete(view.key);
     else unclamped.add(view.key);
     draw(true);
   });
-  if (!tips) {
-    node.title = view.content;
-    return node;
-  }
+  if (!tips || !feed.settings.sectionHover) return node;
   const data = tipData(view.content, view.status);
   anchors.push(mountPopoverAnchor(node, { host, side: 'left', ...tipSize(measureLines(data.text)), getData: () => data }));
   return node;

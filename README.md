@@ -161,7 +161,7 @@ Changes apply at once, in every frame.
 | Group | What you can change |
 |---|---|
 | **Panel** | Text size, row height, font and status colours for the panel and its pages. |
-| **Sidebar section** | The same appearance options on their own, plus layout, how many next items show, the session name and tags. |
+| **Sidebar section** | The same appearance options on their own, plus layout, how many next items show, the session name, tags and hover. |
 | **Lists** | Tags from prefixes, session links, high-priority marks, how deep subagent lists go, motion. |
 | **Your marks** | Turn ticking on or off, and clear this session's ticks and notes. |
 | **Attention** | When to say "no activity", toasts, and the rail badge. |

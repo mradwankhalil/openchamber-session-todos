@@ -23,6 +23,8 @@ export type RowOptions = {
   /** show: as a tag. hide: drop the prefix, keep the title. raw: the agent's text as written. */
   tags: 'show' | 'hide' | 'raw';
   markPriority: boolean;
+  /** No hover text on the row. */
+  noHover?: boolean;
   /** `ses_…` in the text becomes a named link when this is given. */
   ref?: (id: string) => HTMLElement | null;
   meta?: string;
@@ -47,7 +49,7 @@ export const todoRow = (view: TodoView, options: RowOptions): HTMLElement => {
   const body = h('span', { class: 'body' }, tag && options.tags === 'show' ? h('span', { class: 'tag' }, tag) : null, text, ...refs);
   const row = h(options.onSelect ? 'div' : 'button', {
     class: `row ${rowTone(view)}${options.oneLine ? ' one' : ''}${options.twoLines ? ' two' : ''}${options.threeLines ? ' three' : ''}`,
-    title: view.content,
+    ...(options.noHover ? {} : { title: view.content }),
     ...(options.onSelect
       ? { role: 'option', tabindex: '-1', 'aria-selected': options.selected ? 'true' : 'false', onClick: options.onSelect, 'data-key': view.key }
       : { type: 'button' }),

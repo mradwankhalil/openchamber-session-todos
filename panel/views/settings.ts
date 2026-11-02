@@ -51,7 +51,8 @@ export const viewSettings = (app: Pick<App, 'feed' | 'actions' | 'state'>): HTML
       opt('Layout', 'At a glance shows what is happening and what is next. Groups has headed sections that fold.', pick('sectionLayout', [['glance', 'At a glance'], ['groups', 'Groups']])),
       opt('Next items shown', '', range('sectionRows', 1, 10, 1, '', 'Next items shown')),
       opt('Show the session name', '', toggle('sectionWho', 'Show the session name')),
-      opt('Show tags in the sidebar', 'Off by default. They take width from the title.', toggle('sectionTags', 'Show tags in the sidebar'))),
+      opt('Show tags in the sidebar', 'Off by default. They take width from the title.', toggle('sectionTags', 'Show tags in the sidebar')),
+      opt('Hover', 'On by default. Shows the full text in a box to the left when you hover a row.', toggle('sectionHover', 'Hover'))),
 
     box('Lists',
       opt('Show tags in the panel', 'NEXT-COORD | Confirm the pin becomes a tag and a title. Off hides the prefix.', toggle('tags', 'Show tags in the panel')),

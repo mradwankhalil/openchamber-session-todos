@@ -67,7 +67,7 @@ Turn on **Let me tick items** in Settings to tick items and add notes. Agents ne
 ### Small things that help
 
 - **Honest states.** A session waiting on your permission or answer says so, and a session that has gone quiet with work still open says "no activity" (after 10 minutes by default).
-- **Tags from prefixes.** `BACKEND | Add the limiter` becomes a `BACKEND` tag and a shorter title.
+- **Tags from prefixes.** `BACKEND | Add the limiter` becomes a `BACKEND` tag and a shorter title. Turning tags off hides the prefix; panel and sidebar have independent toggles.
 - **Session links.** A session id in a todo shows that session's name and opens it.
 - **Your own todos.** Type `/todo` in a chat, or use **Add to my todos** on a message.
 - **Copy as Markdown** and **Export** (list, history, ticks and notes, as JSON).
@@ -169,7 +169,7 @@ Changes apply at once, in every frame.
 | **Where lists come from** | Turn each source on or off, and set its path if yours is unusual. |
 | **History and data** | Keep history or not, its folder, export, and reset. |
 
-OpenChamber doesn't tell extensions its text size, so set **Section text size** once to match your other sections. Text size defaults to 14 px in the panel and 12 px in the sidebar section.
+OpenChamber doesn't tell extensions its text size, so set **Section text size** once to match your other sections. Text size defaults to 15 px in the panel and 13.75 px in the sidebar section. Saved text sizes are kept.
 
 ## Where lists come from
 

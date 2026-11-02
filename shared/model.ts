@@ -383,14 +383,16 @@ export const pruneMarks = (marks: Marks, todos: Todo[]): Marks => {
   return same ? marks : { ticks, notes };
 };
 
-export type Counts = { total: number; done: number; mine: number; active: number; open: number };
+/** done includes cancelled: both are finished. cancelled is kept apart so the bar can show it. */
+export type Counts = { total: number; done: number; cancelled: number; mine: number; active: number; open: number };
 
 /** What the list claims, kept apart from what the user claims. */
 export const countViews = (views: TodoView[]): Counts => {
-  const counts: Counts = { total: views.length, done: 0, mine: 0, active: 0, open: 0 };
+  const counts: Counts = { total: views.length, done: 0, cancelled: 0, mine: 0, active: 0, open: 0 };
   for (const view of views) {
     if (view.mine) counts.mine += 1;
-    else if (view.status === 'completed' || view.status === 'cancelled') counts.done += 1;
+    else if (view.status === 'completed') counts.done += 1;
+    else if (view.status === 'cancelled') { counts.done += 1; counts.cancelled += 1; }
     else if (view.status === 'in_progress') counts.active += 1;
     else counts.open += 1;
   }

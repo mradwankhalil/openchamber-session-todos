@@ -26,7 +26,7 @@ describe('the section has its own look', () => {
     expect(settings.sectionFont).toBe('custom');
     expect(settings.sectionCustomFont).toBe('Inter');
     expect(settings.sectionColors).toBe('custom');
-    expect(settings.sectionColorActive).toBe('#111111');
+    expect(settings.colorActive).toBe('#111111');
   });
 
   test('a new install: 15 px panel, 13.75 px section, the same look otherwise', () => {
@@ -50,17 +50,17 @@ describe('the section has its own look', () => {
   });
 
   test('a bad value falls back, and nothing unsafe reaches a style rule', () => {
-    const settings = readSettings({ sectionRowHeight: 'huge', sectionColors: 'pink', sectionColorDone: 'red;}', sectionCustomFont: 'A;}<b>' });
+    const settings = readSettings({ sectionRowHeight: 'huge', sectionColors: 'pink', colorDone: 'red;}', sectionCustomFont: 'A;}<b>' });
     expect(settings.sectionRowHeight).toBe('normal');
     expect(settings.sectionColors).toBe('theme');
-    expect(settings.sectionColorDone).toBe(DEFAULTS.colorDone);
+    expect(settings.colorDone).toBe(DEFAULTS.colorDone);
     expect(settings.sectionCustomFont).toBe('Ab');
   });
 
   test('each surface applies only its own values', () => {
     const settings = readSettings({
       textSize: 20, rowHeight: 'roomy', font: 'mono', colors: 'classic',
-      sectionTextSize: 10 + 2, sectionRowHeight: 'tight', sectionFont: 'custom', sectionCustomFont: 'Inter', sectionColors: 'custom', sectionColorActive: '#222222',
+      sectionTextSize: 10 + 2, sectionRowHeight: 'tight', sectionFont: 'custom', sectionCustomFont: 'Inter', sectionColors: 'custom', colorActive: '#222222',
     });
     const panel = fakeRoot();
     applySettings(settings, 'panel', panel.root);
@@ -77,5 +77,27 @@ describe('the section has its own look', () => {
     expect(section.props.get('--todo-font')).toContain('Inter');
     expect(section.dataset.colors).toBe('custom');
     expect(section.props.get('--todo-custom-active')).toBe('#222222');
+  });
+
+  test('both surfaces share one set of custom colours', () => {
+    const settings = readSettings({ colors: 'custom', sectionColors: 'custom', colorDone: '#123456' });
+    const panel = fakeRoot();
+    const section = fakeRoot();
+    applySettings(settings, 'panel', panel.root);
+    applySettings(settings, 'section', section.root);
+    expect(panel.props.get('--todo-custom-done')).toBe('#123456');
+    expect(section.props.get('--todo-custom-done')).toBe('#123456');
+  });
+
+  test('from two sets: colours picked on the section survive, and the old defaults count as never chosen', () => {
+    const settings = readSettings({
+      colorActive: '#7fc15f', colorNext: '#a3a1a9', colorDone: '#a3a1a9', colorAttention: '#111111',
+      sectionColorActive: '#5599ff', sectionColorNext: '#ccaa00', sectionColorDone: '#a3a1a9', sectionColorAttention: '#e6a457',
+    });
+    expect(settings.colorActive).toBe('#5599ff');
+    expect(settings.colorNext).toBe('#ccaa00');
+    expect(settings.colorDone).toBe(DEFAULTS.colorDone);
+    expect(settings.colorAttention).toBe('#111111');
+    expect('sectionColorActive' in settings).toBe(false);
   });
 });

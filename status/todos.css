@@ -18,12 +18,15 @@
   --c-next: var(--muted);
   --c-done: var(--muted);
   --c-attn: var(--warn);
+  --bar-done: var(--ok);
+  --bar-cancel: var(--bar-done);
+  --bar-mine: var(--mine);
+  --bar-active: color-mix(in srgb, var(--fg) 58%, transparent);
+  --bar-open: var(--hover);
 }
-html[data-colors="classic"] { --c-next: var(--warn); --c-done: var(--err); }
+html[data-colors="classic"] { --c-active: var(--info); --c-done: var(--ok); --bar-cancel: var(--warn); --bar-mine: color-mix(in srgb, var(--ok) 55%, transparent); --bar-active: var(--info); }
 html[data-colors="mono"] { --c-active: var(--fg); --c-next: var(--muted); --c-done: var(--faint); --c-attn: var(--fg); }
-html[data-colors="custom"] { --c-active: var(--todo-custom-active); --c-next: var(--todo-custom-next); --c-done: var(--todo-custom-done); --c-attn: var(--todo-custom-attention); }
-/* Light themes tune warning text towards amber; a share of the theme's red brings Classic's Next back to orange. */
-html[data-oc-theme="light"][data-colors="classic"] { --c-next: color-mix(in srgb, var(--oc-warning-text) 60%, var(--oc-error-text)); }
+html[data-colors="custom"] { --c-active: var(--todo-custom-active); --c-next: var(--todo-custom-next); --c-done: var(--todo-custom-done); --c-attn: var(--todo-custom-attention); --bar-done: var(--todo-custom-done); --bar-cancel: var(--todo-custom-attention); --bar-mine: color-mix(in srgb, var(--todo-custom-done) 55%, transparent); --bar-active: var(--todo-custom-active); --bar-open: color-mix(in srgb, var(--todo-custom-next) 22%, transparent); }
 
 /* applyHostReady writes the host's mode as the root's color-scheme. The host's own <html> scheme is set once
    before first paint and can lag the theme; Chromium then paints this frame's canvas opaque white over the
@@ -69,12 +72,12 @@ code { font-family: var(--oc-mono, ui-monospace, monospace); font-size: .88em; }
 .row.two .txt, .row.three .txt { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
 .row.three .txt { -webkit-line-clamp: 3; }
 .row.three[aria-selected="true"] .txt { -webkit-line-clamp: unset; }
-.row.next .glyph, .row.next .tick { color: var(--faint); }
+.row.next .glyph, .row.next .tick { color: var(--c-next); }
 .row.active .glyph, .row.active .tick { color: var(--c-active); }
 .row.active .txt { font-weight: 560; }
 .row.done .glyph, .row.done .tick { color: var(--c-done); }
 .row.done .txt, .row.cancelled .txt, .row.mine .txt { color: var(--muted); }
-.row.cancelled .glyph { color: var(--faint); }
+.row.cancelled .glyph { color: var(--c-attn); }
 .row.cancelled .txt { text-decoration: line-through; text-decoration-color: var(--faint); }
 .row.mine .glyph, .row.mine .tick { color: var(--mine); }
 .row.gone .glyph { color: var(--faint); }
@@ -86,10 +89,11 @@ code { font-family: var(--oc-mono, ui-monospace, monospace); font-size: .88em; }
 /* Progress: done, your ticks, in progress, still open */
 .progress { display: flex; gap: 2px; height: 5px; }
 .progress i { display: block; min-width: 2px; border-radius: 3px; transition: flex-grow .28s cubic-bezier(.16,1,.3,1); }
-.p-done { background: var(--ok); }
-.p-mine { background: var(--mine); }
-.p-active { background: color-mix(in srgb, var(--fg) 58%, transparent); }
-.p-open { background: var(--hover); box-shadow: inset 0 0 0 1px var(--line); }
+.p-done { background: var(--bar-done); }
+.p-cancel { background: var(--bar-cancel); }
+.p-mine { background: var(--bar-mine); }
+.p-active { background: var(--bar-active); }
+.p-open { background: var(--bar-open); box-shadow: inset 0 0 0 1px var(--line); }
 .cnt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .cnt small { font-size: .84em; font-weight: 400; color: var(--faint); }
 

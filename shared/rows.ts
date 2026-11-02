@@ -64,10 +64,10 @@ export const todoRow = (view: TodoView, options: RowOptions): HTMLElement => {
 };
 
 export const progressBar = (counts: Counts): HTMLElement => {
-  const label = `${counts.done} done, ${counts.mine} ticked by you, ${counts.active} in progress, ${counts.open} still open, of ${counts.total}`;
+  const label = `${counts.done - counts.cancelled} done, ${counts.cancelled} cancelled, ${counts.mine} ticked by you, ${counts.active} in progress, ${counts.open} still open, of ${counts.total}`;
   const part = (cls: string, count: number): HTMLElement | null => (count > 0 ? h('i', { class: cls, style: `flex:${count} 1 0` }) : null);
   return h('div', { class: 'progress', role: 'img', 'aria-label': label, title: label },
-    part('p-done', counts.done), part('p-mine', counts.mine), part('p-active', counts.active), part('p-open', counts.open));
+    part('p-done', counts.done - counts.cancelled), part('p-cancel', counts.cancelled), part('p-mine', counts.mine), part('p-active', counts.active), part('p-open', counts.open));
 };
 
 export const countLabel = (counts: Counts): HTMLElement => h('span', { class: 'cnt' }, String(counts.done + counts.mine), h('small', null, `/${counts.total}`));

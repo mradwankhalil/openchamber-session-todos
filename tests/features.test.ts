@@ -98,8 +98,13 @@ describe('marks', () => {
   });
 
   test('counts never claim the agent finished what you ticked', () => {
-    expect(countViews(applyMarks(list, marks, true))).toEqual({ total: 3, done: 1, mine: 2, active: 0, open: 0 });
-    expect(countViews(applyMarks(list, EMPTY_MARKS, true))).toEqual({ total: 3, done: 1, mine: 0, active: 1, open: 1 });
+    expect(countViews(applyMarks(list, marks, true))).toEqual({ total: 3, done: 1, cancelled: 0, mine: 2, active: 0, open: 0 });
+    expect(countViews(applyMarks(list, EMPTY_MARKS, true))).toEqual({ total: 3, done: 1, cancelled: 0, mine: 0, active: 1, open: 1 });
+  });
+
+  test('a cancelled item counts as finished and is also counted apart, for the bar', () => {
+    const dropped = list.map((item) => ({ ...item, status: 'cancelled' as const }));
+    expect(countViews(applyMarks(dropped, EMPTY_MARKS, true))).toEqual({ total: 3, done: 3, cancelled: 3, mine: 0, active: 0, open: 0 });
   });
 
   test('a tick clears when the agent finished the item or dropped it', () => {

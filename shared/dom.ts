@@ -24,9 +24,10 @@ export const h = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Props | 
 const PATHS: Record<string, string> = {
   ring: '<circle cx="12" cy="12" r="8"/>',
   active: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4" fill="currentColor" stroke="none"/>',
-  check: '<circle cx="12" cy="12" r="8.4" fill="currentColor" fill-opacity=".16"/><path d="m8.2 12.3 2.6 2.6 5-5.4"/>',
+  // Solid discs with the mark cut out, so the mark shows whatever is behind the row.
+  check: '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12 3.15a8.85 8.85 0 1 0 0 17.7 8.85 8.85 0 0 0 0-17.7zM8.7 11.7l2.07 2.06 4.5-4.84 1.46 1.36-5.9 6.36-3.54-3.53z"/>',
   mine: '<circle cx="12" cy="12" r="8.4" stroke-dasharray="2.6 2.6"/><path d="m8.2 12.3 2.6 2.6 5-5.4"/>',
-  cancel: '<circle cx="12" cy="12" r="8"/><path d="m9.2 9.2 5.6 5.6m0-5.6-5.6 5.6"/>',
+  cancel: '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12 3.15a8.85 8.85 0 1 0 0 17.7 8.85 8.85 0 0 0 0-17.7zM10.9 7.2h2.2v6.4h-2.2zM12 14.8a1.35 1.35 0 1 1 0 2.7 1.35 1.35 0 0 1 0-2.7z"/>',
   gone: '<circle cx="12" cy="12" r="8" stroke-dasharray="2.4 3"/>',
   caret: '<path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>',
   alert: '<path d="M12 4 3.5 19h17z"/><path d="M12 10v4.4M12 17v.1"/>',

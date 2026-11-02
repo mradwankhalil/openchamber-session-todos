@@ -6,7 +6,7 @@ import { pageTop } from './parts.ts';
 
 type BoolKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
 type TextKey = 'customFont' | 'sectionCustomFont' | 'omoDir' | 'databasePath' | 'dataDir';
-type ColorKey = 'colorActive' | 'colorNext' | 'colorDone' | 'colorAttention' | 'sectionColorActive' | 'sectionColorNext' | 'sectionColorDone' | 'sectionColorAttention';
+type ColorKey = 'colorActive' | 'colorNext' | 'colorDone' | 'colorAttention';
 
 /** Every option there is. Changes apply at once, in every frame. */
 export const viewSettings = (app: Pick<App, 'feed' | 'actions' | 'state'>): HTMLElement[] => {
@@ -18,8 +18,8 @@ export const viewSettings = (app: Pick<App, 'feed' | 'actions' | 'state'>): HTML
     h('div', { class: 'opt' }, h('div', null, title, help ? h('small', null, help) : null), ...(Array.isArray(control) ? control : [control]))
   );
   const toggle = (key: BoolKey, label: string): HTMLElement => h('input', { type: 'checkbox', class: 'sw', id: `set-${key}`, 'aria-label': label, checked: s[key], onChange: (event: Event) => save({ [key]: (event.target as HTMLInputElement).checked } as Partial<Settings>) });
-  const pick = <K extends keyof Settings>(key: K, choices: [Settings[K], string][]): HTMLElement => (
-    h('span', { class: 'seg', role: 'group' }, ...choices.map(([value, label]) => h('button', { type: 'button', 'aria-pressed': String(s[key] === value), onClick: () => save({ [key]: value } as Partial<Settings>) }, label)))
+  const pick = <K extends keyof Settings>(key: K, choices: [Settings[K], string][], also?: (value: Settings[K]) => Partial<Settings>): HTMLElement => (
+    h('span', { class: 'seg', role: 'group' }, ...choices.map(([value, label]) => h('button', { type: 'button', 'aria-pressed': String(s[key] === value), onClick: () => save({ [key]: value, ...also?.(value) } as Partial<Settings>) }, label)))
   );
   const range = (key: 'textSize' | 'sectionTextSize' | 'sectionRows' | 'quietMinutes' | 'overviewDays', min: number, max: number, step: number, unit: string, label: string): HTMLElement[] => [
     h('input', { type: 'range', id: `set-${key}`, min: String(min), max: String(max), step: String(step), value: String(s[key]), 'aria-label': label, onInput: (event: Event) => save({ [key]: Number((event.target as HTMLInputElement).value) } as Partial<Settings>) }),
@@ -32,22 +32,22 @@ export const viewSettings = (app: Pick<App, 'feed' | 'actions' | 'state'>): HTML
   const swatch = (key: ColorKey, label: string): HTMLElement => h('input', { type: 'color', value: s[key], 'aria-label': label, title: label, onChange: (event: Event) => save({ [key]: (event.target as HTMLInputElement).value } as Partial<Settings>) });
 
   const box = (title: string, ...rows: (HTMLElement | (HTMLElement | null)[] | null)[]): HTMLElement => h('section', { class: 'set-box' }, h('h2', null, title), ...rows.flat());
-  const looks = (keys: { row: 'rowHeight' | 'sectionRowHeight'; font: 'font' | 'sectionFont'; custom: 'customFont' | 'sectionCustomFont'; colors: 'colors' | 'sectionColors'; swatches: [ColorKey, ColorKey, ColorKey, ColorKey] }): (HTMLElement | null)[] => [
+  const looks = (keys: { row: 'rowHeight' | 'sectionRowHeight'; font: 'font' | 'sectionFont'; custom: 'customFont' | 'sectionCustomFont'; colors: 'colors' | 'sectionColors' }): (HTMLElement | null)[] => [
     opt('Row height', '', pick(keys.row, [['tight', 'Tight'], ['normal', 'Normal'], ['roomy', 'Roomy']])),
     opt('Font', '', pick(keys.font, [['host', 'OpenChamber'], ['mono', 'Monospace'], ['custom', 'Custom']])),
     s[keys.font] === 'custom' ? opt('Font name', 'Any font installed on this computer.', textField(keys.custom, 'Inter', 'Font name')) : null,
-    opt('Status colours', 'Classic is green, orange and red headings.', pick(keys.colors, [['theme', 'Theme'], ['classic', 'Classic'], ['mono', 'Mono'], ['custom', 'Custom']])),
-    s[keys.colors] === 'custom' ? opt('Your colours', 'In progress, next, done, needs you.', [swatch(keys.swatches[0], 'In progress'), swatch(keys.swatches[1], 'Next'), swatch(keys.swatches[2], 'Done'), swatch(keys.swatches[3], 'Needs you')]) : null,
+    opt('Status colours', 'Classic is green for done, blue for in progress and orange for cancelled.', pick(keys.colors, [['theme', 'Theme'], ['classic', 'Classic'], ['mono', 'Mono'], ['custom', 'Custom']], (value) => (value === 'custom' ? { colors: value, sectionColors: value } : {}))),
+    s[keys.colors] === 'custom' ? opt('Your colours', 'In progress, next, done, cancelled or needs you. Shared by the panel and the sidebar, and they colour the progress bar.', [swatch('colorActive', 'In progress'), swatch('colorNext', 'Next'), swatch('colorDone', 'Done'), swatch('colorAttention', 'Cancelled or needs you')]) : null,
   ];
 
   return [pageTop('Settings'), h('div', { class: 'set' },
     box('Panel',
       opt('Panel text size', 'This panel and its pages. The sidebar section has its own look, below.', range('textSize', 11, 22, 0.25, ' px', 'Panel text size')),
-      looks({ row: 'rowHeight', font: 'font', custom: 'customFont', colors: 'colors', swatches: ['colorActive', 'colorNext', 'colorDone', 'colorAttention'] })),
+      looks({ row: 'rowHeight', font: 'font', custom: 'customFont', colors: 'colors' })),
 
     box('Sidebar section',
       opt('Section text size', 'OpenChamber doesn\'t tell extensions its text size. Set this once to match your other sections.', range('sectionTextSize', 11, 22, 0.25, ' px', 'Section text size')),
-      looks({ row: 'sectionRowHeight', font: 'sectionFont', custom: 'sectionCustomFont', colors: 'sectionColors', swatches: ['sectionColorActive', 'sectionColorNext', 'sectionColorDone', 'sectionColorAttention'] }),
+      looks({ row: 'sectionRowHeight', font: 'sectionFont', custom: 'sectionCustomFont', colors: 'sectionColors' }),
       opt('Layout', 'At a glance shows what is happening and what is next. Groups has headed sections that fold.', pick('sectionLayout', [['glance', 'At a glance'], ['groups', 'Groups']])),
       opt('Next items shown', '', range('sectionRows', 1, 10, 1, '', 'Next items shown')),
       opt('Show the session name', '', toggle('sectionWho', 'Show the session name')),

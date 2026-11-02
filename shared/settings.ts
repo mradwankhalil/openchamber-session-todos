@@ -22,10 +22,6 @@ export type Settings = {
   sectionFont: 'host' | 'mono' | 'custom';
   sectionCustomFont: string;
   sectionColors: 'theme' | 'classic' | 'mono' | 'custom';
-  sectionColorActive: string;
-  sectionColorNext: string;
-  sectionColorDone: string;
-  sectionColorAttention: string;
   motion: boolean;
   sectionLayout: 'glance' | 'groups';
   sectionRows: number;
@@ -61,18 +57,14 @@ export const DEFAULTS: Settings = {
   font: 'host',
   customFont: '',
   colors: 'theme',
-  colorActive: '#7fc15f',
+  colorActive: '#5b9fe8',
   colorNext: '#a3a1a9',
-  colorDone: '#a3a1a9',
+  colorDone: '#7fc15f',
   colorAttention: '#e6a457',
   sectionRowHeight: 'normal',
   sectionFont: 'host',
   sectionCustomFont: '',
   sectionColors: 'theme',
-  sectionColorActive: '#7fc15f',
-  sectionColorNext: '#a3a1a9',
-  sectionColorDone: '#a3a1a9',
-  sectionColorAttention: '#e6a457',
   motion: true,
   sectionLayout: 'groups',
   sectionRows: 5,
@@ -119,10 +111,12 @@ export const readSettings = (raw: unknown): Settings => {
   const font = oneOf(value.font, ['host', 'mono', 'custom'], d.font);
   const customFont = fontName(value.customFont, d.customFont);
   const colors = oneOf(value.colors, ['theme', 'classic', 'mono', 'custom'], d.colors);
-  const colorActive = color(value.colorActive, d.colorActive);
-  const colorNext = color(value.colorNext, d.colorNext);
-  const colorDone = color(value.colorDone, d.colorDone);
-  const colorAttention = color(value.colorAttention, d.colorAttention);
+  // The panel and the section each had a set of custom colours. They now share one. The old default means
+  // never chosen, so a colour picked on either surface survives; where both were picked, the section's does.
+  const customColor = (key: 'colorActive' | 'colorNext' | 'colorDone' | 'colorAttention', sectionKey: string, oldDefault: string): string => {
+    if (!(sectionKey in value)) return color(value[key], d[key]);
+    return color([value[sectionKey], value[key]].find((candidate) => color(candidate, oldDefault) !== oldDefault), d[key]);
+  };
   return {
     textSize: clamp(value.textSize, 11, 22, d.textSize),
     // Before these were separate, one size served both.
@@ -132,19 +126,15 @@ export const readSettings = (raw: unknown): Settings => {
     font,
     customFont,
     colors,
-    colorActive,
-    colorNext,
-    colorDone,
-    colorAttention,
+    colorActive: customColor('colorActive', 'sectionColorActive', '#7fc15f'),
+    colorNext: customColor('colorNext', 'sectionColorNext', '#a3a1a9'),
+    colorDone: customColor('colorDone', 'sectionColorDone', '#a3a1a9'),
+    colorAttention: customColor('colorAttention', 'sectionColorAttention', '#e6a457'),
     // Before these were separate, the panel's look served both.
     sectionRowHeight: oneOf(value.sectionRowHeight, ['tight', 'normal', 'roomy'], rowHeight),
     sectionFont: oneOf(value.sectionFont, ['host', 'mono', 'custom'], font),
     sectionCustomFont: fontName(value.sectionCustomFont, customFont),
     sectionColors: oneOf(value.sectionColors, ['theme', 'classic', 'mono', 'custom'], colors),
-    sectionColorActive: color(value.sectionColorActive, colorActive),
-    sectionColorNext: color(value.sectionColorNext, colorNext),
-    sectionColorDone: color(value.sectionColorDone, colorDone),
-    sectionColorAttention: color(value.sectionColorAttention, colorAttention),
     motion: bool(value.motion, d.motion),
     sectionLayout: oneOf(value.sectionLayout, ['glance', 'groups'], d.sectionLayout),
     sectionRows: Math.round(clamp(value.sectionRows, 1, 10, d.sectionRows)),
@@ -193,10 +183,10 @@ export const applySettings = (settings: Settings, where: 'panel' | 'section' = '
   else if (font === 'custom' && customFont.trim()) style.setProperty('--todo-font', `${customFont}, var(--oc-font, system-ui, sans-serif)`);
   else style.removeProperty('--todo-font');
   if (colors === 'custom') {
-    style.setProperty('--todo-custom-active', section ? settings.sectionColorActive : settings.colorActive);
-    style.setProperty('--todo-custom-next', section ? settings.sectionColorNext : settings.colorNext);
-    style.setProperty('--todo-custom-done', section ? settings.sectionColorDone : settings.colorDone);
-    style.setProperty('--todo-custom-attention', section ? settings.sectionColorAttention : settings.colorAttention);
+    style.setProperty('--todo-custom-active', settings.colorActive);
+    style.setProperty('--todo-custom-next', settings.colorNext);
+    style.setProperty('--todo-custom-done', settings.colorDone);
+    style.setProperty('--todo-custom-attention', settings.colorAttention);
   }
 };
 

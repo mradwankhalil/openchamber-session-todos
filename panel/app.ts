@@ -492,7 +492,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     const row = (item: TodoView): (HTMLElement)[] => {
       const open = item.status === 'pending' || item.status === 'in_progress';
       const node = todoRow(item, {
-        tags: settings.tags ? 'show' : 'raw',
+        tags: settings.tags ? 'show' : 'hide',
         markPriority,
         threeLines: true,
         selected: state.selected === item.key,
@@ -583,7 +583,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
           childCounts.total > 0 ? h('span', { class: 'mini' }, progressBar(childCounts)) : null,
           childCounts.total > 0 ? h('span', { class: 'num small' }, `${childCounts.done}/${childCounts.total}`) : null)));
         if (open) {
-          const line = (item: TodoView, depth: number): HTMLElement => treed(depth, todoRow(item, { oneLine: true, tags: settings.tags ? 'show' : 'raw', markPriority: false }));
+          const line = (item: TodoView, depth: number): HTMLElement => treed(depth, todoRow(item, { oneLine: true, tags: settings.tags ? 'show' : 'hide', markPriority: false }));
           for (const item of child.shown) list.push(line(item, child.depth + 1));
           if (child.tucked.length > 0) {
             const tuckKey = `${key}:cancelled`;

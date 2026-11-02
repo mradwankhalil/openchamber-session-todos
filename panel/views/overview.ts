@@ -99,7 +99,7 @@ export const viewOverview = (app: Pick<App, 'state' | 'actions' | 'feed' | 'work
         h('button', { type: 'button', class: 'name trunc', title: `Open ${session.title}`, onClick: () => actions.openSession(session.id) }, session.title),
         groups.total > 0 ? h('span', { class: 'num faint' }, `${groups.done}/${groups.total}`) : null)),
       ...(open ? [
-        ...items.map((view) => treed(level + 1, todoRow(view, { oneLine: true, tags: feed.settings.tags ? 'show' : 'raw', markPriority: false }))),
+        ...items.map((view) => treed(level + 1, todoRow(view, { oneLine: true, tags: feed.settings.tags ? 'show' : 'hide', markPriority: false }))),
         ...below,
       ] : []),
     ];

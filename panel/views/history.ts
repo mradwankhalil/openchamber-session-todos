@@ -55,7 +55,7 @@ export const viewHistory = (app: Pick<App, 'state' | 'actions' | 'feed'>): HTMLE
       h('input', { type: 'range', id: 'replay', min: '0', max: String(revisions.length - 1), value: String(index), 'aria-label': 'Replay this list over time', onInput: (event: Event) => actions.setReplay(Number((event.target as HTMLInputElement).value)) }),
       h('span', { class: 'num faint small' }, last ? clock(last.at) : '')),
     h('div', { class: 'split with-side', style: `--side-w:${feed.settings.sideWidth}px` },
-      h('div', { class: 'list' }, ...ordered.map((view) => todoRow(view, { oneLine: true, tags: feed.settings.tags ? 'show' : 'raw', markPriority: false }))),
+      h('div', { class: 'list' }, ...ordered.map((view) => todoRow(view, { oneLine: true, tags: feed.settings.tags ? 'show' : 'hide', markPriority: false }))),
       columnHandle(feed),
       h('aside', { class: 'insp side' }, ...[...revisions.keys()].reverse().slice(0, 60).map((at) => {
         const item = revisions[at];

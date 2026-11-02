@@ -54,7 +54,7 @@ export const viewSettings = (app: Pick<App, 'feed' | 'actions' | 'state'>): HTML
       opt('Show tags in the sidebar', 'Off by default. They take width from the title.', toggle('sectionTags', 'Show tags in the sidebar'))),
 
     box('Lists',
-      opt('Turn prefixes into tags', 'NEXT-COORD | Confirm the pin becomes a tag and a title.', toggle('tags', 'Turn prefixes into tags')),
+      opt('Show tags in the panel', 'NEXT-COORD | Confirm the pin becomes a tag and a title. Off hides the prefix.', toggle('tags', 'Show tags in the panel')),
       opt('Link session ids', 'ses_e70a shows the session\'s name and opens it.', toggle('refs', 'Link session ids')),
       opt('Mark high priority', 'Only in lists that mix priorities. Where everything is high, a mark tells you nothing.', toggle('priority', 'Mark high priority')),
       opt('Subagent lists', s.subagentDepth === 'auto' ? `Following your config: ${resolveDepth('auto', state.configuredDepth)} level${resolveDepth('auto', state.configuredDepth) === 1 ? '' : 's'} deep. A subagent's own subagents show under it.` : 'A subagent\'s own subagents show under it, as far as you choose.', pick('subagentDepth', [['auto', 'Auto'], [0, 'None'], [1, '1'], [2, '2'], [3, '3'], [4, '4']])),

@@ -104,7 +104,7 @@ const row = (view: TodoView, oneLine: boolean, mark: boolean): HTMLElement => {
   const node = todoRow(view, {
     oneLine: oneLine && !full,
     twoLines: !oneLine && !full,
-    tags: !feed.settings.tags ? 'raw' : feed.settings.sectionTags ? 'show' : 'hide',
+    tags: feed.settings.sectionTags ? 'show' : 'hide',
     markPriority: mark,
   });
   node.addEventListener('click', () => {

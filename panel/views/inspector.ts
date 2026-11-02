@@ -30,14 +30,14 @@ export const clock = (at: number, now = Date.now()): string => {
 /** Why the list says what it says about one item, and what you can do about it. */
 export const inspector = (app: Pick<App, 'state' | 'actions' | 'feed'>, view: TodoView): HTMLElement[] => {
   const { state, actions, feed } = app;
-  const { tag, title } = feed.settings.tags ? splitTag(view.content) : { tag: null, title: view.content };
+  const { title } = splitTag(view.content);
   const open = view.status === 'pending' || view.status === 'in_progress';
   const history = itemHistory(state.revisions, view.content);
   const spent = history.inProgressMs > 60_000 ? elapsedLabel(history.inProgressMs) : null;
   const ticking = feed.settings.ticking;
 
   const parts: (HTMLElement | null)[] = [
-    h('h2', null, tag ? h('span', { class: 'tag' }, tag) : null, title),
+    h('h2', null, title),
     h('div', { class: 'stat' },
       h('div', null, h('b', null, STATUS[view.status]), 'Agent says'),
       spent ? h('div', null, h('b', null, spent), 'In progress for') : null,

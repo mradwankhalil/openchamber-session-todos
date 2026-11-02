@@ -1,5 +1,5 @@
 import { h } from '../../shared/dom.ts';
-import { EMPTY_MARKS, applyMarks, countViews, groupTodos, type Revision } from '../../shared/model.ts';
+import { EMPTY_MARKS, applyMarks, countViews, groupTodos, type Revision, type TodoView } from '../../shared/model.ts';
 import { countLabel, progressBar, todoRow } from '../../shared/rows.ts';
 import type { App } from '../app.ts';
 import { clock } from './inspector.ts';
@@ -44,6 +44,14 @@ export const viewHistory = (app: Pick<App, 'state' | 'actions' | 'feed'>): HTMLE
   const ordered = [...groups.active, ...groups.pending, ...groups.completed, ...groups.cancelled];
   const first = revisions[0];
   const last = revisions[revisions.length - 1];
+  // One row open at a time: a click opens it downward, and closes whichever was open.
+  const row = (view: TodoView): HTMLElement => {
+    const open = state.historyOpen === view.key;
+    const node = todoRow(view, { oneLine: !open, noHover: open, tags: feed.settings.tags ? 'show' : 'hide', markPriority: false });
+    node.setAttribute('aria-expanded', String(open));
+    node.addEventListener('click', () => actions.toggleHistoryItem(view.key));
+    return node;
+  };
   return [
     h('div', { class: 'p-head' },
       pageTop('History', countLabel(countViews(views))),
@@ -55,7 +63,7 @@ export const viewHistory = (app: Pick<App, 'state' | 'actions' | 'feed'>): HTMLE
       h('input', { type: 'range', id: 'replay', min: '0', max: String(revisions.length - 1), value: String(index), 'aria-label': 'Replay this list over time', onInput: (event: Event) => actions.setReplay(Number((event.target as HTMLInputElement).value)) }),
       h('span', { class: 'num faint small' }, last ? clock(last.at) : '')),
     h('div', { class: 'split with-side', style: `--side-w:${feed.settings.sideWidth}px` },
-      h('div', { class: 'list' }, ...ordered.map((view) => todoRow(view, { oneLine: true, tags: feed.settings.tags ? 'show' : 'hide', markPriority: false }))),
+      h('div', { class: 'list' }, ...ordered.map(row)),
       columnHandle(feed),
       h('aside', { class: 'insp side' }, ...[...revisions.keys()].reverse().slice(0, 60).map((at) => {
         const item = revisions[at];

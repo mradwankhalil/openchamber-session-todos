@@ -67,6 +67,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     own: [] as OwnItem[],
     revisions: [] as Revision[],
     replayAt: -1,
+    historyOpen: null as string | null,
     backlog: [] as BacklogItem[],
     children: [] as { id: string; title: string; agent: string; activity: string; updatedAt: number; depth: number; todos: TodoView[] }[],
     configuredDepth: null as number | null,
@@ -114,6 +115,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     lastSession = id;
     state.selected = null;
     state.replayAt = -1;
+    state.historyOpen = null;
     state.query = '';
     state.marks = EMPTY_MARKS;
     state.own = [];
@@ -326,6 +328,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       render(true, true);
     },
     setReplay(index: number) { state.replayAt = index; render(true, true); },
+    toggleHistoryItem(key: string) { state.historyOpen = state.historyOpen === key ? null : key; render(true); },
     setOverviewMode(mode: 'sessions' | 'open') { state.overviewMode = mode; render(true); },
     async runSetupCheck() {
       await loadOtherSessions();

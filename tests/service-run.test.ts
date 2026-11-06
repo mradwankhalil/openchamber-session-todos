@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import { tmpdir } from 'node:os';
@@ -136,6 +136,45 @@ describe('the service as a process', () => {
     const history = await call('/v1/history', { sessionId: 'ses_inlog' });
     expect(history.revisions).toHaveLength(1);
     expect(existsSync(path.join(root, 'data', 'history', 'ses_inlog.json'))).toBe(true);
+  });
+
+  test('repairs a stored history on load, keeping the old file beside it', async () => {
+    const file = path.join(root, 'data', 'history', 'ses_repair.json');
+    const list = (content: string, status = 'pending') => [{ content, status }];
+    writeFileSync(file, JSON.stringify([
+      { at: 100, source: 'oh-my-openagent', todos: list('a') },
+      { at: 200, source: 'oh-my-openagent', todos: list('a', 'in_progress') },
+      { at: 100, source: 'OpenCode session, an older version', todos: list('a') },
+      { at: 300, source: 'oh-my-openagent', todos: list('a', 'completed') },
+    ]));
+    const history = await call('/v1/history', { sessionId: 'ses_repair' });
+    expect((history.revisions as { at: number }[]).map((revision) => revision.at)).toEqual([100, 200, 300]);
+    expect(existsSync(`${file}.bak`)).toBe(true);
+    expect((JSON.parse(readFileSync(file, 'utf8')) as unknown[]).length).toBe(3);
+    expect(await call('/v1/watch', { sessionId: 'ses_repair', directory: root })).toEqual({ ok: true });
+  });
+
+  test('a damaged history is set aside before a new list is written over it', async () => {
+    const file = path.join(root, 'data', 'history', 'ses_damaged.json');
+    writeFileSync(file, '[{"at":1,"source":"x","todos":[{"content":"half');
+    host.messages = [{ id: 'm1', time: { created: 7 }, content: [{ type: 'tool', name: 'todowrite', state: { status: 'completed', input: { todos: [{ content: 'after the damage', status: 'pending' }] } } }] }];
+    await call('/v1/list', { sessionId: 'ses_damaged', directory: root });
+    const history = await call('/v1/history', { sessionId: 'ses_damaged' });
+    expect(history.revisions).toHaveLength(1);
+    const aside = readdirSync(path.dirname(file)).filter((name) => name.startsWith('ses_damaged.json.damaged-'));
+    expect(aside).toHaveLength(1);
+    expect(readFileSync(path.join(path.dirname(file), aside[0] ?? ''), 'utf8')).toBe('[{"at":1,"source":"x","todos":[{"content":"half');
+  });
+
+  test('nothing is recorded while the agent file cannot be read, though the list is shown', async () => {
+    const project = path.join(root, 'midwrite');
+    const folder = path.join(project, '.omo', 'v2-state');
+    Bun.spawnSync(['node', '-e', `require('fs').mkdirSync(${JSON.stringify(folder)},{recursive:true})`]);
+    writeFileSync(path.join(folder, 'todos.json'), '{"ses_mid": [{"content": "newer, in the fi');
+    host.messages = [{ id: 'm1', time: { created: 7 }, content: [{ type: 'tool', name: 'todowrite', state: { status: 'completed', input: { todos: [{ content: 'older, in the log', status: 'pending' }] } } }] }];
+    const answer = await call('/v1/list', { sessionId: 'ses_mid', directory: project });
+    expect(answer.todos).toEqual([{ content: 'older, in the log', status: 'pending' }]);
+    expect((await call('/v1/history', { sessionId: 'ses_mid' })).revisions).toHaveLength(0);
   });
 
   test('finds a list older than the first page of messages', async () => {

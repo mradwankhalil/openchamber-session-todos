@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
-import { appendRevision, editsFile, isRecord, parseTodosFile, planSessionId, planSteps, readTodos, readsOwnFile, todosForSession, type Revision, type Todo } from '../shared/model.ts';
+import { appendRevision, editsFile, isRecord, parseTodosFile, planSessionId, planSteps, readTodos, readsOwnFile, repairRevisions, todosForSession, OLDER_VERSION, type Revision, type Todo } from '../shared/model.ts';
 import { DEFAULTS, readSettings, type Settings } from '../shared/settings.ts';
 import {
   MIN_OPENCODE,
@@ -166,7 +166,7 @@ type Found = { todos: Todo[]; at: number; source: string };
 const found = (hit: ToolHit, source: string): Found => ({
   todos: hit.todos,
   at: hit.at,
-  source: hit.behind ? `${source}, an older version` : source,
+  source: hit.behind ? `${source}${OLDER_VERSION}` : source,
 });
 
 const fromDatabase = (sessionId: string): Found | null => {
@@ -194,15 +194,31 @@ const fromDatabase = (sessionId: string): Found | null => {
 
 // ----- A session's list, wherever it lives -----
 
-const omoRead = async (directory: string, name: string): Promise<{ value: Record<string, unknown>; at: number } | null> => {
+// The agent rewrites its file often. A read caught mid-write is tried again for a while before
+// the slower sources are asked, which may only hold an older list.
+const OMO_RETRY_MS = 150;
+const OMO_TRIES = 4;
+
+type OmoFile = { value: Record<string, unknown>; at: number };
+
+const omoReadState = async (directory: string, name: string): Promise<OmoFile | 'missing' | 'unreadable'> => {
   const file = path.join(directory, ...settings.omoDir.split('/'), name);
-  try {
-    const [text, info] = await Promise.all([readFile(file, 'utf8'), stat(file)]);
-    const value = parseTodosFile(text);
-    return value ? { value, at: info.mtimeMs } : null;
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < OMO_TRIES; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, OMO_RETRY_MS));
+    try {
+      const [text, info] = await Promise.all([readFile(file, 'utf8'), stat(file)]);
+      const value = parseTodosFile(text);
+      if (value) return { value, at: info.mtimeMs };
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return 'missing';
+    }
   }
+  return 'unreadable';
+};
+
+const omoRead = async (directory: string, name: string): Promise<OmoFile | null> => {
+  const file = await omoReadState(directory, name);
+  return typeof file === 'string' ? null : file;
 };
 
 const created = new Map<string, number>();
@@ -222,10 +238,8 @@ const sessionCreatedAt = async (sessionId: string, directory: string | null): Pr
   }
 };
 
-const fromOmo = async (sessionId: string, directory: string | null, anySession = false): Promise<Found | null> => {
-  if (!settings.useOmo || !directory) return null;
-  const file = await omoRead(directory, 'todos.json');
-  if (!file || !Object.hasOwn(file.value, sessionId)) return null;
+const fromOmo = async (sessionId: string, directory: string | null, file: OmoFile | null, anySession = false): Promise<Found | null> => {
+  if (!directory || !file || !Object.hasOwn(file.value, sessionId)) return null;
   const switchedAt = settings.nativeFolders[directory];
   if (!anySession && switchedAt !== undefined && !readsOwnFile(await sessionCreatedAt(sessionId, directory), switchedAt)) return null;
   return { todos: todosForSession(file.value, sessionId), at: file.at, source: 'oh-my-openagent' };
@@ -264,7 +278,9 @@ const freshFor = (answer: ListAnswer): number => {
 const readList = async (sessionId: string, directory: string | null, atLeastMs = 0): Promise<ListAnswer> => {
   const hit = cache.get(sessionId);
   if (hit && Date.now() - hit.at < Math.max(atLeastMs, freshFor(hit.answer))) return hit.answer;
-  let list = await fromOmo(sessionId, directory);
+  const agentFile = settings.useOmo && directory ? await omoReadState(directory, 'todos.json') : 'missing';
+  const omo = typeof agentFile === 'string' ? null : agentFile;
+  let list = await fromOmo(sessionId, directory, omo);
   if (!list) {
     try {
       list = await fromLog(sessionId, directory);
@@ -274,13 +290,16 @@ const readList = async (sessionId: string, directory: string | null, atLeastMs =
   }
   if (!list && settings.useDatabase) list = fromDatabase(sessionId);
   // A list on record beats saying there is none, whichever folder rule applied above.
-  if (!list) list = await fromOmo(sessionId, directory, true);
+  if (!list) list = await fromOmo(sessionId, directory, omo, true);
   const answer: ListAnswer = list
     ? { status: 'ok', ...list }
     : { status: 'none', reason: 'No todo list in this session.' };
   cache.set(sessionId, { at: Date.now(), answer });
   if (cache.size > 400) cache.delete(cache.keys().next().value as string);
-  if (list) void record(sessionId, list);
+  // History takes only lists the service can stand behind: not one its source knows is older,
+  // and nothing while the agent's file can't be read, since it may hold a newer list than the
+  // other sources. Both are still shown; the next good read records the current list.
+  if (list && agentFile !== 'unreadable' && !list.source.endsWith(OLDER_VERSION)) void record(sessionId, list);
   return answer;
 };
 
@@ -289,42 +308,121 @@ const readList = async (sessionId: string, directory: string | null, atLeastMs =
 const historyDir = (): string => path.join(settings.dataDir.trim().replace(/^~(?=[/\\])/, os.homedir()) || path.join(os.homedir(), '.local', 'share', 'openchamber-session-todos'), 'history');
 const historyFile = (sessionId: string): string => path.join(historyDir(), `${sessionId.replace(/[^\w.-]/g, '_')}.json`);
 
-const histories = new Map<string, Revision[]>();
+// The history last read or written, with the file's time then: another process may write the file too.
+const histories = new Map<string, { revisions: Revision[]; mtimeMs: number }>();
 
-const loadHistory = async (sessionId: string): Promise<Revision[]> => {
-  const known = histories.get(sessionId);
-  if (known) return known;
-  let revisions: Revision[] = [];
-  try {
-    const raw: unknown = JSON.parse(await readFile(historyFile(sessionId), 'utf8'));
-    if (Array.isArray(raw)) revisions = raw.flatMap((entry) => (isRecord(entry) && typeof entry.at === 'number' ? [{ at: entry.at, source: String(entry.source ?? ''), todos: readTodos(entry.todos) }] : []));
-  } catch { /* first time for this session */ }
-  histories.set(sessionId, revisions);
-  return revisions;
+// One history job at a time per session, so a repair and a record never race in this process.
+const jobs = new Map<string, Promise<unknown>>();
+const serial = <T>(sessionId: string, job: () => Promise<T>): Promise<T> => {
+  const run = (jobs.get(sessionId) ?? Promise.resolve()).then(job, job);
+  jobs.set(sessionId, run);
+  void run.finally(() => { if (jobs.get(sessionId) === run) jobs.delete(sessionId); }).catch(() => undefined);
+  return run;
 };
 
-const record = async (sessionId: string, list: Found): Promise<void> => {
-  if (!settings.history || list.todos.length === 0) return;
+const mtimeOf = (file: string): Promise<number> => stat(file).then((info) => info.mtimeMs, () => 0);
+
+const RENAME_TRIES = 4;
+const RENAME_RETRY_MS = 60;
+
+/** Writes the whole history and answers the file's new time. Throws when it could not. */
+const saveHistory = async (sessionId: string, revisions: Revision[], keepOld = false): Promise<number> => {
+  const file = historyFile(sessionId);
+  await mkdir(path.dirname(file), { recursive: true });
+  if (keepOld) await copyFile(file, `${file}.bak`);
+  const scratch = `${file}.${process.pid}.tmp`;
+  await writeFile(scratch, JSON.stringify(revisions));
+  // A reader holding the file (a backup, a virus scanner) blocks a rename on Windows for a moment.
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await rename(scratch, file);
+      break;
+    } catch (error) {
+      if (attempt >= RENAME_TRIES) {
+        await unlink(scratch).catch(() => undefined);
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_MS));
+    }
+  }
+  return mtimeOf(file);
+};
+
+const readRevision = (entry: unknown): Revision[] => (
+  isRecord(entry) && typeof entry.at === 'number' && Array.isArray(entry.todos) ? [{ at: entry.at, source: String(entry.source ?? ''), todos: readTodos(entry.todos) }] : []
+);
+
+const loadHistoryNow = async (sessionId: string): Promise<Revision[]> => {
+  const file = historyFile(sessionId);
+  const mtimeMs = await mtimeOf(file);
+  const known = histories.get(sessionId);
+  if (known && known.mtimeMs === mtimeMs) return known.revisions;
+  let text: string | null = null;
   try {
-    const revisions = await loadHistory(sessionId);
+    text = await readFile(file, 'utf8');
+  } catch (error) {
+    // Missing is a first time. Anything else (locked, no access) is not an empty history.
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+  }
+  let revisions: Revision[] = [];
+  let damaged = false;
+  if (text !== null) {
+    try {
+      const raw: unknown = JSON.parse(text);
+      if (Array.isArray(raw)) {
+        revisions = raw.flatMap(readRevision);
+        damaged = revisions.length !== raw.length;
+      } else damaged = true;
+    } catch {
+      damaged = true;
+    }
+  }
+  // Never write over what could not be read whole: set the file aside first, once per version of it.
+  if (damaged) {
+    const aside = `${file}.damaged-${Math.round(mtimeMs)}`;
+    if (!fs.existsSync(aside)) await copyFile(file, aside);
+  }
+  // Older copies were once kept as new versions. Drop them, and keep the file as it was beside it.
+  const repaired = repairRevisions(revisions);
+  const savedAt = repaired !== revisions ? await saveHistory(sessionId, repaired, true) : mtimeMs;
+  histories.set(sessionId, { revisions: repaired, mtimeMs: savedAt });
+  return repaired;
+};
+
+const loadHistory = (sessionId: string): Promise<Revision[]> => serial(sessionId, () => loadHistoryNow(sessionId));
+
+const record = (sessionId: string, list: Found): Promise<void> => {
+  if (!settings.history || list.todos.length === 0) return Promise.resolve();
+  return serial(sessionId, async () => {
+    const revisions = await loadHistoryNow(sessionId);
     const next = appendRevision(revisions, list.todos, list.at || Date.now(), list.source);
     if (next === revisions) return;
-    histories.set(sessionId, next);
-    const file = historyFile(sessionId);
-    await mkdir(path.dirname(file), { recursive: true });
-    const scratch = `${file}.${process.pid}.tmp`;
-    await writeFile(scratch, JSON.stringify(next));
-    await rename(scratch, file);
-  } catch { /* history is a bonus; a failed write must not touch the list */ }
+    // Kept as read only once it is on disk: a failed write is tried again on the next read.
+    histories.set(sessionId, { revisions: next, mtimeMs: await saveHistory(sessionId, next) });
+  }).catch(() => undefined);
 };
 
 // The recorder keeps history when no frame is open, for the sessions a frame last named.
 const watched = new Map<string, string | null>();
 const WATCH_MS = 5000;
 const WATCH_MAX = 12;
+const watch = (id: string, directory: string | null): void => {
+  watched.delete(id);
+  watched.set(id, directory);
+  if (watched.size > WATCH_MAX * 4) watched.delete(watched.keys().next().value as string);
+};
+// Sessions a frame names through /v1/watch stay recorded while it keeps naming them, however
+// many other lists are read in between.
+const pinned = new Map<string, { directory: string | null; until: number }>();
+const PIN_MS = 60000;
+const PIN_MAX = 50;
 setInterval(() => {
   if (!settings.history) return;
-  for (const [id, directory] of [...watched].slice(-WATCH_MAX)) void readList(id, directory).catch(() => undefined);
+  const now = Date.now();
+  for (const [id, pin] of pinned) if (pin.until < now) pinned.delete(id);
+  const due = new Map([...watched].slice(-WATCH_MAX));
+  for (const [id, pin] of pinned) due.set(id, pin.directory);
+  for (const [id, directory] of due) void readList(id, directory).catch(() => undefined);
 }, WATCH_MS).unref();
 
 // ----- First-run report and the one edit this service may make -----
@@ -515,10 +613,18 @@ const routes: Record<string, (body: Record<string, unknown>) => Promise<unknown>
     const id = String(body.sessionId ?? '');
     const directory = typeof body.directory === 'string' ? body.directory : null;
     if (!id) return { status: 'none', reason: 'No session.' };
-    watched.delete(id);
-    watched.set(id, directory);
-    if (watched.size > WATCH_MAX * 4) watched.delete(watched.keys().next().value as string);
+    watch(id, directory);
     return readList(id, directory);
+  },
+  // A frame that reads the agent's file itself names its session here, so it is still recorded.
+  '/v1/watch': async (body) => {
+    const id = String(body.sessionId ?? '');
+    if (id) {
+      pinned.delete(id);
+      pinned.set(id, { directory: typeof body.directory === 'string' ? body.directory : null, until: Date.now() + PIN_MS });
+      if (pinned.size > PIN_MAX) pinned.delete(pinned.keys().next().value as string);
+    }
+    return { ok: true };
   },
   '/v1/lists': async (body) => {
     const sessions = Array.isArray(body.sessions) ? body.sessions.filter(isRecord).slice(0, 200) : [];
@@ -602,7 +708,7 @@ const routes: Record<string, (body: Record<string, unknown>) => Promise<unknown>
     const answer = await api(`/api/session/${encodeURIComponent(String(body.sessionId ?? ''))}`, { directory: typeof body.directory === 'string' ? body.directory : null }).catch(() => null);
     return { session: isRecord(answer?.body) ? (isRecord(answer.body.data) ? answer.body.data : answer.body) : null };
   },
-  '/v1/history': async (body) => ({ revisions: await loadHistory(String(body.sessionId ?? '')) }),
+  '/v1/history': async (body) => ({ revisions: await loadHistory(String(body.sessionId ?? '')).catch((): Revision[] => []) }),
   '/v1/redirect': (body) => setRedirect(body.on === true),
   '/v1/enable-todo': (body) => setTodo({ reload: body.reload === true, directory: typeof body.directory === 'string' ? body.directory : null, value: body.value !== false }),
   '/v1/reload': async (body) => {

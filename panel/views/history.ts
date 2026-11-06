@@ -102,7 +102,7 @@ const subagents = (app: Ctx): HTMLElement[] => {
       child.agent ? h('span', { class: 'muted small' }, child.agent) : null,
       h('span', { class: 'faint small num' }, `${revisions.length} version${revisions.length === 1 ? '' : 's'}`),
       counts.total > 0 ? h('span', { class: 'mini' }, progressBar(counts)) : null,
-      counts.total > 0 ? h('span', { class: 'num small' }, `${counts.done}/${counts.total}`) : null)));
+      counts.total > 0 ? h('span', { class: 'num small sub-n' }, `${counts.done}/${counts.total}`) : null)));
     if (!open) continue;
     const source = revisions[index]?.source;
     out.push(treed(child.depth + 1, h('div', { class: 'hist-child' },

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   appendRevision,
+  repairRevisions,
   applyMarks,
   buildTree,
   countViews,
@@ -161,6 +162,32 @@ describe('revisions', () => {
     const revs = build();
     expect(appendRevision(revs, [t('a', 'completed')], at(30), 'omo')).toBe(revs);
     expect(revs).toHaveLength(3);
+  });
+
+  test('a new list is kept whatever its time: a revert, a clock change, a shared file time', () => {
+    const revs = build();
+    expect(appendRevision(revs, [t('a'), t('b')], at(5), 'OpenCode session')).toHaveLength(4);
+    expect(appendRevision(revs, [t('c')], at(-1), 'omo')).toHaveLength(4);
+  });
+
+  test('a stored history loses older copies its source flagged, and the repeats they split', () => {
+    const good = build();
+    const [first, second, third] = good;
+    if (!first || !second || !third) throw new Error('build gives three');
+    const stored = [first, second, { ...first, source: 'OpenCode session, an older version' }, { ...second, at: at(12) }, third];
+    expect(repairRevisions(stored)).toEqual(good);
+    expect(repairRevisions(good)).toBe(good);
+  });
+
+  test('repair never drops a list kept nowhere else, nor decides by time', () => {
+    const good = build();
+    const [first, second, third] = good;
+    if (!first || !second || !third) throw new Error('build gives three');
+    const oldList = { at: at(-9000), source: 'old list', todos: [t('legacy')] };
+    const flaggedOnly = { at: at(1), source: 'database, an older version', todos: [t('seen once')] };
+    const future = { ...second, at: at(10 ** 9) };
+    const stored = [first, oldList, future, flaggedOnly, third];
+    expect(repairRevisions(stored)).toBe(stored);
   });
 
   test('keeps at most the cap, dropping the oldest', () => {

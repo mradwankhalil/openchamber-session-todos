@@ -546,6 +546,26 @@ export const appendRevision = (revisions: Revision[], todos: Todo[], at: number,
   return [...revisions, { at, source, todos }].slice(-max);
 };
 
+/** How a source labels a list it knows is not its newest: a newer call it could not read came after it. */
+export const OLDER_VERSION = ', an older version';
+
+/**
+ * A stored history without the older copies once kept as new versions: an entry its source
+ * labelled an older version whose list is already kept before it, and the repeat that removing
+ * it leaves. Timestamps decide nothing, and a list kept nowhere else always stays.
+ * Returns the same array when nothing changed.
+ */
+export const repairRevisions = (revisions: Revision[]): Revision[] => {
+  const kept: Revision[] = [];
+  for (const revision of revisions) {
+    const last = kept[kept.length - 1];
+    if (last && sameList(last.todos, revision.todos)) continue;
+    if (revision.source.endsWith(OLDER_VERSION) && kept.some((earlier) => sameList(earlier.todos, revision.todos))) continue;
+    kept.push(revision);
+  }
+  return kept.length === revisions.length ? revisions : kept;
+};
+
 export type ItemEvent = { at: number; what: 'added' | 'started' | 'finished' | 'cancelled' | 'reopened' | 'gone' | 'returned' };
 
 export type ItemHistory = { events: ItemEvent[]; inProgressMs: number };

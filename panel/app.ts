@@ -749,7 +749,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
           h('span', { class: 'car' }, icon('caret')), h('span', { class: `dot ${child.activity}`, title: child.activity }), h('span', { class: 'grow trunc', title: child.title }, child.title),
           child.agent ? h('span', { class: 'muted small' }, child.agent) : null,
           childCounts.total > 0 ? h('span', { class: 'mini' }, progressBar(childCounts)) : null,
-          childCounts.total > 0 ? h('span', { class: 'num small' }, `${childCounts.done}/${childCounts.total}`) : null)));
+          childCounts.total > 0 ? h('span', { class: 'num small sub-n' }, `${childCounts.done}/${childCounts.total}`) : null)));
         if (open) {
           const line = (item: TodoView, depth: number): HTMLElement => treed(depth, todoRow(item, { oneLine: true, tags: settings.tags ? 'show' : 'hide', markPriority: false }));
           for (const item of child.shown) subs.push(line(item, child.depth + 1));

@@ -204,6 +204,8 @@ kbd { padding: 0 4px; border-radius: 4px; background: var(--hover); color: var(-
 .subhead .car { color: var(--faint); transition: transform .16s; }
 .subhead[aria-expanded="false"] .car { transform: rotate(-90deg); }
 .mini { flex: none; width: 40px; }
+/* Room for "100/100", right-aligned, so the bars before it line up whatever the count. */
+.subhead .sub-n { flex: none; min-width: 7ch; text-align: right; font-variant-numeric: tabular-nums; }
 .mini .progress { height: 4px; }
 .dot { flex: none; width: .55em; height: .55em; border-radius: 50%; background: var(--faint); }
 .dot.running, .dot.retrying { background: var(--ok); }

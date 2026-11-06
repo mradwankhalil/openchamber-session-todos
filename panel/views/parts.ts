@@ -58,9 +58,6 @@ const KEY_STEP = 16;
 
 /** The handle between a list and its right column. The width is kept in settings. */
 export const columnHandle = (feed: App['feed']): HTMLElement => {
-  const place = (width: number): void => {
-    document.querySelector<HTMLElement>('.split.with-side')?.style.setProperty('--side-w', `${width}px`);
-  };
   const bound = (width: number): number => Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, width)));
   const save = (width: number): void => feed.saveSettings({ ...feed.settings, sideWidth: width });
   return h('div', {
@@ -71,10 +68,12 @@ export const columnHandle = (feed: App['feed']): HTMLElement => {
       event.preventDefault();
       const handle = event.currentTarget as HTMLElement;
       handle.setPointerCapture(event.pointerId);
+      // This handle's own split: History holds one per open timeline, and the first is the main one.
+      const split = handle.closest<HTMLElement>('.split.with-side');
       const startX = event.clientX;
       const startWidth = feed.settings.sideWidth;
       let width = startWidth;
-      const move = (next: PointerEvent): void => { width = bound(startWidth + startX - next.clientX); place(width); };
+      const move = (next: PointerEvent): void => { width = bound(startWidth + startX - next.clientX); split?.style.setProperty('--side-w', `${width}px`); };
       const up = (): void => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);

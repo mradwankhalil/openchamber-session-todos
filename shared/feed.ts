@@ -17,6 +17,9 @@ const HELLO_EVERY_MS = 10000;
 // session's folder. "No todo list" is only believed once it has held this long.
 const SETTLE_MS = 1200;
 const SETTLE_RETRY_MS = 250;
+// History is recorded by the service, for the sessions it is asked about. A list read here is
+// named to it now and then, so recording goes on, also after the host restarts the service.
+const WATCH_EVERY_MS = 10000;
 
 export type View =
   | { kind: 'loading' }
@@ -67,6 +70,7 @@ export const createFeed = (host: Host, onChange: (reason: 'view' | 'session' | '
   let lastService = 0;
   let serviceSig = '';
   let settingsSig = '';
+  let lastWatch = 0;
 
   const show = (next: View): void => {
     view = next;
@@ -82,6 +86,12 @@ export const createFeed = (host: Host, onChange: (reason: 'view' | 'session' | '
       if (url.protocol === 'http:' || url.protocol === 'https:') origin = url.origin;
     } catch { /* an opaque frame: the service finds the server by itself */ }
     service(host, '/v1/hello', { origin, settings }).then(() => { serviceUp = true; }).catch(() => undefined);
+  };
+
+  const keepRecorded = (sessionId: string): void => {
+    if (!settings.history || Date.now() - lastWatch < WATCH_EVERY_MS) return;
+    lastWatch = Date.now();
+    service(host, '/v1/watch', { sessionId, directory }).catch(() => undefined);
   };
 
   // Everything other than the agent's own file, through the service.
@@ -112,7 +122,10 @@ export const createFeed = (host: Host, onChange: (reason: 'view' | 'session' | '
           const info = await host.stat(path);
           if (mine !== generation) return;
           const nextStamp = `${info.kind}:${info.size}:${info.mtime}`;
-          if (nextStamp === stamp && view.kind === 'list' && view.source === 'oh-my-openagent' && !force) return;
+          if (nextStamp === stamp && view.kind === 'list' && view.source === 'oh-my-openagent' && !force) {
+            keepRecorded(sessionId);
+            return;
+          }
           if (info.kind === 'file') {
             const { content } = await host.readFile(path);
             if (mine !== generation) return;
@@ -131,6 +144,7 @@ export const createFeed = (host: Host, onChange: (reason: 'view' | 'session' | '
         }
       }
       if (todos) {
+        keepRecorded(sessionId);
         show({ kind: 'list', todos, source: 'oh-my-openagent', at });
         return;
       }
@@ -173,6 +187,7 @@ export const createFeed = (host: Host, onChange: (reason: 'view' | 'session' | '
     stamp = '';
     serviceSig = '';
     lastService = 0;
+    lastWatch = 0;
     settleUntil = Date.now() + SETTLE_MS;
     onChange('session');
     show(session ? { kind: 'loading' } : { kind: 'no-session' });

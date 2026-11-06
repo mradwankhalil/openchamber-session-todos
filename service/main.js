@@ -107,6 +107,19 @@ var appendRevision = (revisions, todos, at, source, max = MAX_REVISIONS) => {
     return revisions;
   return [...revisions, { at, source, todos }].slice(-max);
 };
+var OLDER_VERSION = ", an older version";
+var repairRevisions = (revisions) => {
+  const kept = [];
+  for (const revision of revisions) {
+    const last = kept[kept.length - 1];
+    if (last && sameList(last.todos, revision.todos))
+      continue;
+    if (revision.source.endsWith(OLDER_VERSION) && kept.some((earlier) => sameList(earlier.todos, revision.todos)))
+      continue;
+    kept.push(revision);
+  }
+  return kept.length === revisions.length ? revisions : kept;
+};
 
 // shared/settings.ts
 var DEFAULTS = {
@@ -791,7 +804,7 @@ var databaseFor = (sessionId) => chooseDatabase(databaseCandidates(), (file) => 
 var found = (hit, source) => ({
   todos: hit.todos,
   at: hit.at,
-  source: hit.behind ? `${source}, an older version` : source
+  source: hit.behind ? `${source}${OLDER_VERSION}` : source
 });
 var fromDatabase = (sessionId) => {
   const file = databaseFor(sessionId);
@@ -819,15 +832,28 @@ var fromDatabase = (sessionId) => {
     return null;
   });
 };
-var omoRead = async (directory, name) => {
+var OMO_RETRY_MS = 150;
+var OMO_TRIES = 4;
+var omoReadState = async (directory, name) => {
   const file = path.join(directory, ...settings.omoDir.split("/"), name);
-  try {
-    const [text2, info] = await Promise.all([readFile(file, "utf8"), stat(file)]);
-    const value = parseTodosFile(text2);
-    return value ? { value, at: info.mtimeMs } : null;
-  } catch {
-    return null;
+  for (let attempt = 0;attempt < OMO_TRIES; attempt += 1) {
+    if (attempt > 0)
+      await new Promise((resolve) => setTimeout(resolve, OMO_RETRY_MS));
+    try {
+      const [text2, info] = await Promise.all([readFile(file, "utf8"), stat(file)]);
+      const value = parseTodosFile(text2);
+      if (value)
+        return { value, at: info.mtimeMs };
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT")
+        return "missing";
+    }
   }
+  return "unreadable";
+};
+var omoRead = async (directory, name) => {
+  const file = await omoReadState(directory, name);
+  return typeof file === "string" ? null : file;
 };
 var created = new Map;
 var sessionCreatedAt = async (sessionId, directory) => {
@@ -846,11 +872,8 @@ var sessionCreatedAt = async (sessionId, directory) => {
     return null;
   }
 };
-var fromOmo = async (sessionId, directory, anySession = false) => {
-  if (!settings.useOmo || !directory)
-    return null;
-  const file = await omoRead(directory, "todos.json");
-  if (!file || !Object.hasOwn(file.value, sessionId))
+var fromOmo = async (sessionId, directory, file, anySession = false) => {
+  if (!directory || !file || !Object.hasOwn(file.value, sessionId))
     return null;
   const switchedAt = settings.nativeFolders[directory];
   if (!anySession && switchedAt !== undefined && !readsOwnFile(await sessionCreatedAt(sessionId, directory), switchedAt))
@@ -890,7 +913,9 @@ var readList = async (sessionId, directory, atLeastMs = 0) => {
   const hit = cache.get(sessionId);
   if (hit && Date.now() - hit.at < Math.max(atLeastMs, freshFor(hit.answer)))
     return hit.answer;
-  let list = await fromOmo(sessionId, directory);
+  const agentFile = settings.useOmo && directory ? await omoReadState(directory, "todos.json") : "missing";
+  const omo = typeof agentFile === "string" ? null : agentFile;
+  let list = await fromOmo(sessionId, directory, omo);
   if (!list) {
     try {
       list = await fromLog(sessionId, directory);
@@ -901,54 +926,131 @@ var readList = async (sessionId, directory, atLeastMs = 0) => {
   if (!list && settings.useDatabase)
     list = fromDatabase(sessionId);
   if (!list)
-    list = await fromOmo(sessionId, directory, true);
+    list = await fromOmo(sessionId, directory, omo, true);
   const answer = list ? { status: "ok", ...list } : { status: "none", reason: "No todo list in this session." };
   cache.set(sessionId, { at: Date.now(), answer });
   if (cache.size > 400)
     cache.delete(cache.keys().next().value);
-  if (list)
+  if (list && agentFile !== "unreadable" && !list.source.endsWith(OLDER_VERSION))
     record(sessionId, list);
   return answer;
 };
 var historyDir = () => path.join(settings.dataDir.trim().replace(/^~(?=[/\\])/, os.homedir()) || path.join(os.homedir(), ".local", "share", "openchamber-session-todos"), "history");
 var historyFile = (sessionId) => path.join(historyDir(), `${sessionId.replace(/[^\w.-]/g, "_")}.json`);
 var histories = new Map;
-var loadHistory = async (sessionId) => {
-  const known = histories.get(sessionId);
-  if (known)
-    return known;
-  let revisions = [];
-  try {
-    const raw = JSON.parse(await readFile(historyFile(sessionId), "utf8"));
-    if (Array.isArray(raw))
-      revisions = raw.flatMap((entry) => isRecord(entry) && typeof entry.at === "number" ? [{ at: entry.at, source: String(entry.source ?? ""), todos: readTodos(entry.todos) }] : []);
-  } catch {}
-  histories.set(sessionId, revisions);
-  return revisions;
-};
-var record = async (sessionId, list) => {
-  if (!settings.history || list.todos.length === 0)
+var jobs = new Map;
+var serial = (sessionId, job) => {
+  const run = (jobs.get(sessionId) ?? Promise.resolve()).then(job, job);
+  jobs.set(sessionId, run);
+  run.finally(() => {
+    if (jobs.get(sessionId) === run)
+      jobs.delete(sessionId);
+  }).catch(() => {
     return;
+  });
+  return run;
+};
+var mtimeOf = (file) => stat(file).then((info) => info.mtimeMs, () => 0);
+var RENAME_TRIES = 4;
+var RENAME_RETRY_MS = 60;
+var saveHistory = async (sessionId, revisions, keepOld = false) => {
+  const file = historyFile(sessionId);
+  await mkdir(path.dirname(file), { recursive: true });
+  if (keepOld)
+    await copyFile(file, `${file}.bak`);
+  const scratch = `${file}.${process.pid}.tmp`;
+  await writeFile(scratch, JSON.stringify(revisions));
+  for (let attempt = 1;; attempt += 1) {
+    try {
+      await rename(scratch, file);
+      break;
+    } catch (error) {
+      if (attempt >= RENAME_TRIES) {
+        await unlink(scratch).catch(() => {
+          return;
+        });
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RENAME_RETRY_MS));
+    }
+  }
+  return mtimeOf(file);
+};
+var readRevision = (entry) => isRecord(entry) && typeof entry.at === "number" && Array.isArray(entry.todos) ? [{ at: entry.at, source: String(entry.source ?? ""), todos: readTodos(entry.todos) }] : [];
+var loadHistoryNow = async (sessionId) => {
+  const file = historyFile(sessionId);
+  const mtimeMs = await mtimeOf(file);
+  const known = histories.get(sessionId);
+  if (known && known.mtimeMs === mtimeMs)
+    return known.revisions;
+  let text2 = null;
   try {
-    const revisions = await loadHistory(sessionId);
+    text2 = await readFile(file, "utf8");
+  } catch (error) {
+    if (!(error instanceof Error && ("code" in error) && error.code === "ENOENT"))
+      throw error;
+  }
+  let revisions = [];
+  let damaged = false;
+  if (text2 !== null) {
+    try {
+      const raw = JSON.parse(text2);
+      if (Array.isArray(raw)) {
+        revisions = raw.flatMap(readRevision);
+        damaged = revisions.length !== raw.length;
+      } else
+        damaged = true;
+    } catch {
+      damaged = true;
+    }
+  }
+  if (damaged) {
+    const aside = `${file}.damaged-${Math.round(mtimeMs)}`;
+    if (!fs.existsSync(aside))
+      await copyFile(file, aside);
+  }
+  const repaired = repairRevisions(revisions);
+  const savedAt = repaired !== revisions ? await saveHistory(sessionId, repaired, true) : mtimeMs;
+  histories.set(sessionId, { revisions: repaired, mtimeMs: savedAt });
+  return repaired;
+};
+var loadHistory = (sessionId) => serial(sessionId, () => loadHistoryNow(sessionId));
+var record = (sessionId, list) => {
+  if (!settings.history || list.todos.length === 0)
+    return Promise.resolve();
+  return serial(sessionId, async () => {
+    const revisions = await loadHistoryNow(sessionId);
     const next = appendRevision(revisions, list.todos, list.at || Date.now(), list.source);
     if (next === revisions)
       return;
-    histories.set(sessionId, next);
-    const file = historyFile(sessionId);
-    await mkdir(path.dirname(file), { recursive: true });
-    const scratch = `${file}.${process.pid}.tmp`;
-    await writeFile(scratch, JSON.stringify(next));
-    await rename(scratch, file);
-  } catch {}
+    histories.set(sessionId, { revisions: next, mtimeMs: await saveHistory(sessionId, next) });
+  }).catch(() => {
+    return;
+  });
 };
 var watched = new Map;
 var WATCH_MS = 5000;
 var WATCH_MAX = 12;
+var watch = (id, directory) => {
+  watched.delete(id);
+  watched.set(id, directory);
+  if (watched.size > WATCH_MAX * 4)
+    watched.delete(watched.keys().next().value);
+};
+var pinned = new Map;
+var PIN_MS = 60000;
+var PIN_MAX = 50;
 setInterval(() => {
   if (!settings.history)
     return;
-  for (const [id, directory] of [...watched].slice(-WATCH_MAX))
+  const now = Date.now();
+  for (const [id, pin] of pinned)
+    if (pin.until < now)
+      pinned.delete(id);
+  const due = new Map([...watched].slice(-WATCH_MAX));
+  for (const [id, pin] of pinned)
+    due.set(id, pin.directory);
+  for (const [id, directory] of due)
     readList(id, directory).catch(() => {
       return;
     });
@@ -1138,11 +1240,18 @@ var routes = {
     const directory = typeof body.directory === "string" ? body.directory : null;
     if (!id)
       return { status: "none", reason: "No session." };
-    watched.delete(id);
-    watched.set(id, directory);
-    if (watched.size > WATCH_MAX * 4)
-      watched.delete(watched.keys().next().value);
+    watch(id, directory);
     return readList(id, directory);
+  },
+  "/v1/watch": async (body) => {
+    const id = String(body.sessionId ?? "");
+    if (id) {
+      pinned.delete(id);
+      pinned.set(id, { directory: typeof body.directory === "string" ? body.directory : null, until: Date.now() + PIN_MS });
+      if (pinned.size > PIN_MAX)
+        pinned.delete(pinned.keys().next().value);
+    }
+    return { ok: true };
   },
   "/v1/lists": async (body) => {
     const sessions = Array.isArray(body.sessions) ? body.sessions.filter(isRecord).slice(0, 200) : [];
@@ -1241,7 +1350,7 @@ var routes = {
     const answer = await api(`/api/session/${encodeURIComponent(String(body.sessionId ?? ""))}`, { directory: typeof body.directory === "string" ? body.directory : null }).catch(() => null);
     return { session: isRecord(answer?.body) ? isRecord(answer.body.data) ? answer.body.data : answer.body : null };
   },
-  "/v1/history": async (body) => ({ revisions: await loadHistory(String(body.sessionId ?? "")) }),
+  "/v1/history": async (body) => ({ revisions: await loadHistory(String(body.sessionId ?? "")).catch(() => []) }),
   "/v1/redirect": (body) => setRedirect(body.on === true),
   "/v1/enable-todo": (body) => setTodo({ reload: body.reload === true, directory: typeof body.directory === "string" ? body.directory : null, value: body.value !== false }),
   "/v1/reload": async (body) => {

@@ -45,6 +45,8 @@ const PATHS: Record<string, string> = {
   plus: '<path d="M12 5.5v13M5.5 12h13"/>',
   trash: '<path d="M5 7h14M10 7V4.5h4V7m-7 0 .8 12.5h8.4L17 7"/>',
   note: '<path d="M6 4h12v11l-5 5H6z"/><path d="M13 20v-5h5"/>',
+  play: '<path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/>',
+  pause: '<path fill="currentColor" stroke="none" d="M7 5h3.6v14H7zM13.4 5H17v14h-3.6z"/>',
 };
 
 export const icon = (name: keyof typeof PATHS | string, className = ''): SVGSVGElement => {

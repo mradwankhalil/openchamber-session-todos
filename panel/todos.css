@@ -80,9 +80,11 @@ code { font-family: var(--oc-mono, ui-monospace, monospace); font-size: .88em; }
 .row.cancelled .glyph { color: var(--c-attn); }
 .row.cancelled .txt { text-decoration: line-through; text-decoration-color: var(--faint); }
 .row.mine .glyph, .row.mine .tick { color: var(--mine); }
-.row.gone .glyph { color: var(--faint); }
+.row.gone .glyph { color: var(--c-attn); }
 .you { flex: none; color: var(--mine); font-size: .8em; font-weight: 600; line-height: 1.75; }
 .prio { flex: none; color: var(--c-attn); line-height: 1.4; }
+.row.next > .prio:not(.note-mark) { color: var(--c-next); }
+.row.active > .prio:not(.note-mark) { color: var(--c-active); }
 .note-mark { color: var(--muted); }
 .meta { flex: none; color: var(--faint); font-size: .86em; line-height: 1.6; font-variant-numeric: tabular-nums; }
 
@@ -212,6 +214,8 @@ kbd { padding: 0 4px; border-radius: 4px; background: var(--hover); color: var(-
 /* A heading's items, under its caret */
 .gitems { margin: 0 0 4px calc(6px + .5em); padding-left: 10px; border-left: 1px solid var(--line); }
 .g-sub { height: auto; margin-top: 14px; padding-top: 10px; padding-bottom: 4px; border-top: 1px solid var(--line); border-radius: 0; color: var(--info); font-size: 1em; font-weight: 650; }
+.sub-sep { height: 0; margin: 16px 0 4px; border-top: 1px solid color-mix(in srgb, var(--fg) 32%, transparent); }
+.sub-sep + .g-sub { margin-top: 0; border-top: 0; }
 .g-sub .n { padding: 0 7px; border-radius: 9px; background: color-mix(in srgb, var(--info) 16%, transparent); color: var(--info); font-weight: 600; }
 .addrow { display: flex; gap: 6px; padding: 4px 0 4px 6px; }
 .addrow input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; }
@@ -223,6 +227,16 @@ kbd { padding: 0 4px; border-radius: 4px; background: var(--hover); color: var(-
 .rev time { flex: none; width: 3.6em; color: var(--faint); font-size: .88em; font-variant-numeric: tabular-nums; }
 .d-add { color: var(--ok); }
 .d-drop { color: var(--err); }
+.scrub .play { color: var(--fg); }
+.scrub .play:disabled { opacity: .4; cursor: default; }
+.stamp { display: flex; gap: 10px; align-items: baseline; padding: 0 0 8px; color: var(--muted); }
+.hist-child { padding: 4px 0 10px 6px; }
+.hist-child .ident { margin-top: 2px; }
+/* The project backlog: OpenChamber's list, set apart from the session's */
+.bl-head { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+.bl-head .ghead { flex: 1; min-width: 0; }
+.bl-title { flex: none; color: var(--err); }
+.bl-what { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--fg); font-weight: 450; }
 .toast-line { padding: 4px 0; font-size: .9em; color: var(--muted); }
 
 /* Overview */

@@ -1,7 +1,7 @@
 import type { GuestSessionRecord } from '@openchamber/sdk';
 
 import { h, icon } from '../../shared/dom.ts';
-import { CHATS_PROJECT, EMPTY_MARKS, applyMarks, buildTree, countViews, elapsedLabel, groupTodos, liveFamilies, needsYou, pruneTree, quietNotice, resolveDepth, type Todo, type TreeNode } from '../../shared/model.ts';
+import { CHATS_PROJECT, EMPTY_MARKS, applyMarks, buildTree, countViews, elapsedLabel, groupTodos, liveFamilies, needsYou, projectForFolder, pruneTree, quietNotice, resolveDepth, type Todo, type TreeNode } from '../../shared/model.ts';
 import { progressBar, todoRow } from '../../shared/rows.ts';
 import type { App } from '../app.ts';
 import { indentStyle, pageTop, rails, treed } from './parts.ts';
@@ -47,6 +47,10 @@ export const viewOverview = (app: Pick<App, 'state' | 'actions' | 'feed' | 'work
   const running = live.filter((session) => session.activity === 'running' || session.activity === 'retrying').length;
   const quietCount = live.filter((session) => quiet(session, todosOf(session.id)) !== null).length;
   const depth = resolveDepth(feed.settings.subagentDepth, state.configuredDepth);
+  // The project of the session you have open starts unfolded all the way down; everything else starts folded.
+  const openId = feed.session?.id;
+  const current = (openId ? allSessions.find((session) => session.id === openId)?.projectId : undefined)
+    ?? (feed.directory ? projectForFolder(feed.directory, workspace.projects)?.id : undefined);
 
   const caret = (open: boolean, label: string, toggle: () => void): HTMLElement => (
     h('button', {
@@ -57,12 +61,12 @@ export const viewOverview = (app: Pick<App, 'state' | 'actions' | 'feed' | 'work
 
   // ----- Sessions: one row each, subagents behind a caret -----
 
-  const sessionRows = (node: Node, level: number): HTMLElement[] => {
+  const sessionRows = (node: Node, level: number, unfold: boolean): HTMLElement[] => {
     const session = node.item;
     const todos = todosOf(session.id);
     const counts = countsOf(session.id);
     const key = `ov:s:${session.id}`;
-    const open = actions.isOpen(key, false);
+    const open = actions.isOpen(key, unfold);
     const hiddenNeed = !open && needsBelow(node);
     const row = h('div', {
       class: `sess${needsYou(session.activity) || hiddenNeed ? ' attn' : ''}`,
@@ -78,19 +82,19 @@ export const viewOverview = (app: Pick<App, 'state' | 'actions' | 'feed' | 'work
       h('span', { class: 'pb' }, todos.length ? progressBar(counts) : null),
       h('span', { class: 'num' }, todos.length ? `${counts.done}/${counts.total}` : ''),
       h('span', { class: 'num faint t' }, elapsedLabel(now - session.updatedAt)));
-    return [row, ...(open ? node.children.flatMap((child) => sessionRows(child, level + 1)) : [])];
+    return [row, ...(open ? node.children.flatMap((child) => sessionRows(child, level + 1, unfold)) : [])];
   };
 
   // ----- Open todos: session, its list, then its subagents' -----
 
-  const openRows = (node: Node, level: number, top = true): HTMLElement[] => {
+  const openRows = (node: Node, level: number, unfold: boolean, top = true): HTMLElement[] => {
     const session = node.item;
     const groups = groupTodos(applyMarks(todosOf(session.id), EMPTY_MARKS, false));
     const items = [...groups.active, ...groups.pending];
     const key = `ov:o:${session.id}`;
-    // A top session starts open, its subagents folded.
-    const open = actions.isOpen(key, top);
-    const below = node.children.flatMap((child) => openRows(child, level + 1, false));
+    // A top session starts open, its subagents folded, except in the project you are in.
+    const open = actions.isOpen(key, top || unfold);
+    const below = node.children.flatMap((child) => openRows(child, level + 1, unfold, false));
     if (items.length === 0 && below.length === 0) return [];
     return [
       treed(level, h('div', { class: 'sesslabel' },
@@ -105,7 +109,7 @@ export const viewOverview = (app: Pick<App, 'state' | 'actions' | 'feed' | 'work
     ];
   };
 
-  const rowsFor = (node: Node, level: number): HTMLElement[] => (state.overviewMode === 'open' ? openRows(node, level) : sessionRows(node, level));
+  const rowsFor = (node: Node, level: number, unfold: boolean): HTMLElement[] => (state.overviewMode === 'open' ? openRows(node, level, unfold) : sessionRows(node, level, unfold));
 
   const byRecent = (left: GuestSessionRecord, right: GuestSessionRecord): number => right.updatedAt - left.updatedAt;
   // A subagent earns a row with a todo list, or by waiting on you.
@@ -128,16 +132,17 @@ export const viewOverview = (app: Pick<App, 'state' | 'actions' | 'feed' | 'work
 
   // Chats first.
   const chats = live.filter((session) => session.projectId === CHATS_PROJECT);
-  const chatRows = treeOf(chats).flatMap((node) => rowsFor(node, 1));
-  const chatsOpen = actions.isOpen('ov:chats', true);
+  const chatRows = treeOf(chats).flatMap((node) => rowsFor(node, 1, false));
+  const chatsOpen = actions.isOpen('ov:chats', false);
 
   // Then projects, the most recently active first.
   const projects = workspace.projects.flatMap((project) => {
     const sessions = live.filter((session) => session.projectId === project.id);
     const newest = sessions.reduce((latest, session) => Math.max(latest, session.updatedAt), 0);
     const key = `ov:p:${project.id}`;
-    const open = actions.isOpen(key, true);
-    const rows = treeOf(sessions).flatMap((node) => rowsFor(node, 2));
+    const here = project.id === current;
+    const open = actions.isOpen(key, here);
+    const rows = treeOf(sessions).flatMap((node) => rowsFor(node, 2, here));
     if (sessions.length === 0 || (state.overviewMode === 'open' && rows.length === 0)) return [];
     const head = treed(1, h('button', { type: 'button', class: 'proj-h', 'aria-expanded': String(open), onClick: () => actions.setFold(key, !open) },
       h('span', { class: 'car' }, icon('caret')),

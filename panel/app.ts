@@ -39,7 +39,7 @@ import {
 import { ago, countLabel, noticeLine, progressBar, todoRow } from '../shared/rows.ts';
 import { SETUP_KEY, applySettings, foldsKey, marksKey, ownKey, readFolds, readOwn, type Folds, type OwnItem } from '../shared/settings.ts';
 import { createWorkspace } from '../shared/workspace.ts';
-import { viewHistory } from './views/history.ts';
+import { MAIN_TIMELINE, viewHistory } from './views/history.ts';
 import { inspector } from './views/inspector.ts';
 import { viewOverview, type Lists } from './views/overview.ts';
 import { columnHandle, pageTop, sessionIdentity, treed } from './views/parts.ts';
@@ -55,6 +55,10 @@ export type App = ReturnType<typeof createApp>;
 const SUBAGENTS_EVERY_MS = 5000;
 const OVERVIEW_EVERY_MS = 5000;
 const LISTS_AT_A_TIME = 60;
+const PLAY_EVERY_MS = 1000;
+
+// Every session opens the same way each time: its folds last only while the frame is open.
+const kept = (folds: Folds): Folds => Object.fromEntries(Object.entries(folds).filter(([key]) => !key.startsWith('ov:')));
 
 const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', addOwn: (sessionId: string, text: string) => Promise<void>) => {
   const state = {
@@ -66,9 +70,14 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     folds: {} as Folds,
     own: [] as OwnItem[],
     revisions: [] as Revision[],
-    replayAt: -1,
-    historyOpen: null as string | null,
+    // Per timeline: where the replay stands (missing: the latest) and which row is open.
+    replay: {} as Record<string, number>,
+    historyOpen: {} as Record<string, string>,
+    playing: null as string | null,
+    childRevisions: {} as Record<string, Revision[]>,
+    historyChildren: {} as Record<string, boolean>,
     backlog: [] as BacklogItem[],
+    backlogShown: null as string | null,
     children: [] as { id: string; title: string; agent: string; activity: string; updatedAt: number; depth: number; todos: TodoView[] }[],
     configuredDepth: null as number | null,
     otherSessions: [] as GuestSessionRecord[],
@@ -92,6 +101,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
   let lastSession: string | null = null;
   let renderSig = '';
   let overviewBusy = false;
+  let playTimer = 0;
   const listsRead = new Map<string, number>();
 
   const feed = createFeed(host, (reason) => {
@@ -114,8 +124,12 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     if (id === lastSession) return;
     lastSession = id;
     state.selected = null;
-    state.replayAt = -1;
-    state.historyOpen = null;
+    stopPlay();
+    state.replay = {};
+    state.historyOpen = {};
+    state.childRevisions = {};
+    state.historyChildren = {};
+    state.backlogShown = null;
     state.query = '';
     state.marks = EMPTY_MARKS;
     state.own = [];
@@ -146,12 +160,36 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     try {
       const answer = await service(host, '/v1/history', { sessionId: id });
       if (feed.session?.id !== id || !Array.isArray(answer.revisions)) return;
-      state.revisions = answer.revisions.flatMap((entry) => (
-        isRecord(entry) && typeof entry.at === 'number' ? [{ at: entry.at, source: String(entry.source ?? ''), todos: readTodos(entry.todos) }] : []
-      ));
+      state.revisions = readRevisions(answer.revisions);
       render();
     } catch { /* no service: no history */ }
   };
+
+  const readRevisions = (raw: unknown[]): Revision[] => raw.flatMap((entry) => (
+    isRecord(entry) && typeof entry.at === 'number' ? [{ at: entry.at, source: String(entry.source ?? ''), todos: readTodos(entry.todos) }] : []
+  ));
+
+  // The service keeps a subagent's history from the first time its list is read, as the list view does every few seconds.
+  const loadChildHistories = async (): Promise<void> => {
+    const id = feed.session?.id;
+    if (!id || state.tab !== 'history' || state.children.length === 0) return;
+    const next: Record<string, Revision[]> = {};
+    await Promise.all(state.children.map(async (child) => {
+      const answer = await service(host, '/v1/history', { sessionId: child.id }).catch(() => null);
+      if (answer && Array.isArray(answer.revisions)) next[child.id] = readRevisions(answer.revisions);
+    }));
+    if (feed.session?.id !== id) return;
+    state.childRevisions = next;
+    render();
+  };
+
+  const revisionsOf = (id: string): Revision[] => (id === MAIN_TIMELINE ? state.revisions : state.childRevisions[id] ?? []);
+
+  function stopPlay(): void {
+    window.clearInterval(playTimer);
+    playTimer = 0;
+    state.playing = null;
+  }
 
   const loadChildren = async (): Promise<void> => {
     const id = feed.session?.id;
@@ -247,13 +285,19 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
   };
 
   const actions = {
-    go(tab: Tab) { state.tab = tab; render(true); if (tab === 'overview') void refreshOverview(); },
+    go(tab: Tab) {
+      if (tab !== 'history') stopPlay();
+      state.tab = tab;
+      render(true);
+      if (tab === 'overview') void refreshOverview();
+      if (tab === 'history') void loadChildHistories();
+    },
     setFilter(filter: Filter) { state.filter = filter; render(true, true); },
     setQuery(query: string) { state.query = query; render(true); },
     select(key: string) { state.selected = state.selected === key ? null : key; render(true); },
     setFold(key: string, open: boolean) {
       state.folds = { ...state.folds, [key]: open };
-      void host.storage.set(foldKey, state.folds).catch(() => undefined);
+      if (!key.startsWith('ov:')) void host.storage.set(foldKey, kept(state.folds)).catch(() => undefined);
       render(true, true);
     },
     isOpen: (key: string, fallback: boolean): boolean => state.folds[key] ?? fallback,
@@ -327,8 +371,53 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       void host.storage.set(ownKey(id), next).catch(() => say('Could not save it.'));
       render(true, true);
     },
-    setReplay(index: number) { state.replayAt = index; render(true, true); },
-    toggleHistoryItem(key: string) { state.historyOpen = state.historyOpen === key ? null : key; render(true); },
+    setReplay(id: string, index: number) {
+      if (state.playing === id) stopPlay();
+      state.replay = { ...state.replay, [id]: index };
+      render(true, true);
+    },
+    toggleHistoryItem(id: string, key: string) {
+      const next = { ...state.historyOpen };
+      if (next[id] === key) delete next[id];
+      else next[id] = key;
+      state.historyOpen = next;
+      render(true);
+    },
+    toggleHistoryChild(id: string) {
+      const open = state.historyChildren[id] !== true;
+      if (!open && state.playing === id) stopPlay();
+      state.historyChildren = { ...state.historyChildren, [id]: open };
+      render(true);
+    },
+    // One timeline plays at a time, a version a second, and stops on the latest.
+    togglePlay(id: string) {
+      if (state.playing === id) { stopPlay(); render(true); return; }
+      stopPlay();
+      const total = revisionsOf(id).length;
+      if (total < 2) return;
+      const at = state.replay[id];
+      // From the start, unless it was paused partway.
+      if (at === undefined || at < 0 || at >= total - 1) state.replay = { ...state.replay, [id]: 0 };
+      state.playing = id;
+      playTimer = window.setInterval(() => {
+        const count = revisionsOf(id).length;
+        const next = (state.replay[id] ?? 0) + 1;
+        if (state.playing !== id) return;
+        if (next >= count - 1) {
+          const { [id]: _done, ...rest } = state.replay;
+          state.replay = rest;
+          stopPlay();
+        } else {
+          state.replay = { ...state.replay, [id]: next };
+        }
+        render(true);
+      }, PLAY_EVERY_MS);
+      render(true);
+    },
+    toggleBacklogItem(id: string) { state.backlogShown = state.backlogShown === id ? null : id; render(true); },
+    openBacklog() {
+      host.openSurface('notes').catch((error: unknown) => say(`Could not open Project knowledge: ${error instanceof Error ? error.message : 'unknown error'}`));
+    },
     setOverviewMode(mode: 'sessions' | 'open') { state.overviewMode = mode; render(true); },
     async runSetupCheck() {
       await loadOtherSessions();
@@ -537,6 +626,25 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       }
     }
 
+    // OpenChamber's project backlog: not this session's list, and labelled so.
+    const backlogOpen = state.backlog.filter((item) => !item.done);
+    if (backlogOpen.length > 0 && state.filter !== 'done' && !state.query) {
+      const open = actions.isOpen('backlog', true);
+      list.push(h('div', { class: 'bl-head' },
+        h('button', { type: 'button', class: 'ghead', 'aria-expanded': String(open), title: 'Items saved to this project in OpenChamber, not to this session.', onClick: () => actions.setFold('backlog', !open) },
+          h('span', { class: 'car' }, icon('caret')), h('span', { class: 'bl-title' }, 'Project Todos Backlog'), h('span', { class: 'bl-what' }, "(Todo's OpenChamber Project knowledge)"), h('span', { class: 'n' }, String(backlogOpen.length))),
+        h('button', { type: 'button', class: 'ib tiny', title: 'Open Project knowledge', 'aria-label': 'Open Project knowledge', onClick: () => actions.openBacklog() }, icon('open'))));
+      if (open) {
+        list.push(h('div', { class: 'gitems' },
+          ...backlogOpen.map((item) => {
+            const shown = state.backlogShown === item.id;
+            return h('button', { type: 'button', class: `row next${shown ? '' : ' one'}`, 'aria-expanded': String(shown), title: shown ? undefined : item.text, onClick: () => actions.toggleBacklogItem(item.id) },
+              h('span', { class: 'glyph' }, icon('flag')), h('span', { class: 'body' }, h('span', { class: 'txt' }, item.text)));
+          }),
+          h('p', { class: 'empty small' }, 'Saved to the project, not this session. Agents may have put them here by mistake.')));
+      }
+    }
+
     // The user's own items: a separate, labelled list.
     if (state.filter !== 'done' || state.own.some((item) => item.done)) {
       const open = actions.isOpen('own', true);
@@ -553,18 +661,6 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
         const input = h('input', { class: 'field', id: 'own-add', type: 'text', placeholder: 'Add something for yourself', 'aria-label': 'Add your own item' });
         mine.push(h('form', { class: 'addrow', onSubmit: (event: Event) => { event.preventDefault(); const text = input.value; input.value = ''; void actions.addOwnItem(text); } }, input, h('button', { type: 'submit', class: 'btn' }, icon('plus'), 'Add')));
         list.push(h('div', { class: 'gitems' }, ...mine));
-      }
-    }
-
-    // OpenChamber's project backlog: not this session's list, and labelled so.
-    const backlogOpen = state.backlog.filter((item) => !item.done);
-    if (backlogOpen.length > 0 && state.filter !== 'done' && !state.query) {
-      const open = actions.isOpen('backlog', true);
-      list.push(h('button', { type: 'button', class: 'ghead', style: 'margin-top:8px', 'aria-expanded': String(open), title: 'Items saved to this project in OpenChamber, not to this session. Manage them in the Project panel.', onClick: () => actions.setFold('backlog', !open) }, h('span', { class: 'car' }, icon('caret')), 'In the project backlog', h('span', { class: 'n' }, String(backlogOpen.length))));
-      if (open) {
-        list.push(h('div', { class: 'gitems' },
-          ...backlogOpen.map((item) => h('div', { class: 'row next', title: item.text }, h('span', { class: 'glyph' }, icon('flag')), h('span', { class: 'body' }, h('span', { class: 'txt' }, item.text)))),
-          h('p', { class: 'empty small' }, 'Saved to the project, not this session. Agents may have put them here by mistake.')));
       }
     }
 
@@ -600,6 +696,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     };
     if (!state.query) {
       const sections = subagentSections(subagentsFor(state.children, state.filter));
+      if (sections.active.length + sections.idle.length > 0) list.push(h('div', { class: 'sub-sep', role: 'separator' }));
       subagentSection('Active subagents', sections.active);
       subagentSection('Idle subagents', sections.idle);
     }
@@ -742,7 +839,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     feed.start();
     workspace.start();
     applySettings(feed.settings);
-    void host.storage.get(foldKey).then((value) => { state.folds = readFolds(value); render(true); }).catch(() => undefined);
+    void host.storage.get(foldKey).then((value) => { state.folds = kept(readFolds(value)); render(true); }).catch(() => undefined);
     void host.storage.get(SETUP_KEY).then((done) => {
       if (done !== true && surface === 'panel') {
         state.tab = 'setup';
@@ -752,7 +849,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     }).catch(() => undefined);
     window.setInterval(() => {
       if (document.visibilityState === 'hidden') return;
-      void loadChildren();
+      void loadChildren().then(loadChildHistories);
       void loadBacklog();
       void loadOwnState();
     }, SUBAGENTS_EVERY_MS);

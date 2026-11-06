@@ -1,6 +1,6 @@
 {
   "name": "openchamber-session-todos",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "See what your agents planned, what they are doing, and what they need from you, across every session and project.",

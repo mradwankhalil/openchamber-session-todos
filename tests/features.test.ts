@@ -24,7 +24,11 @@ import {
   quietNotice,
   resolveDepth,
   sessionState,
+  editsFile,
+  planSessionId,
   readBacklog,
+  planSteps,
+  readPlan,
   readsOwnFile,
   splitTag,
   toMarkdown,
@@ -367,6 +371,44 @@ describe('readBacklog', () => {
     expect(readBacklog(null)).toEqual([]);
     expect(readBacklog({ todos: 'x' })).toEqual([]);
     expect(readBacklog({ todos: [{ id: 'a' }, 3] })).toEqual([]);
+  });
+});
+
+describe('the plan a session works on', () => {
+  const message = (name: string, input: unknown) => JSON.stringify({ content: [{ type: 'text', text: 'x' }, { type: 'tool', name, state: { input } }] });
+  test('a writing tool that names the file edits it; reading it does not', () => {
+    expect(editsFile(message('edit', { filePath: 'C:\\p\\docs\\plans\\plan.md' }), 'plan.md')).toBe(true);
+    expect(editsFile(message('apply_patch', { patchText: '*** Update File: docs/plans/plan.md' }), 'plan.md')).toBe(true);
+    expect(editsFile(message('read', { filePath: 'docs/plans/plan.md' }), 'plan.md')).toBe(false);
+    expect(editsFile(message('edit', { filePath: 'docs/plans/plan.md.bak' }), 'plan.md')).toBe(false);
+    expect(editsFile(message('edit', { filePath: 'docs/plans/myplan.md' }), 'plan.md')).toBe(false);
+    expect(editsFile('not json', 'plan.md')).toBe(false);
+  });
+  test('the linked session reads from a string or a record', () => {
+    expect(planSessionId('ses_a')).toBe('ses_a');
+    expect(planSessionId({ id: 'ses_b', title: 'x' })).toBe('ses_b');
+    expect(planSessionId({ sessionId: 'ses_c' })).toBe('ses_c');
+    expect(planSessionId(null)).toBeNull();
+  });
+  test('reads the plan and how it was found', () => {
+    expect(readPlan({ plan: { id: 'shared:a.md', title: ' Plan A ', progress: { done: 17, total: 77 } }, how: 'edited', at: 5 }))
+      .toEqual({ id: 'shared:a.md', title: 'Plan A', done: 17, total: 77, how: 'edited', at: 5, steps: [] });
+    expect(readPlan({ plan: { title: 'B' }, how: 'linked' })).toEqual({ id: 'B', title: 'B', done: 0, total: 0, how: 'linked', at: 0, steps: [] });
+    expect(readPlan({ plan: null })).toBeNull();
+    expect(readPlan({ plan: { title: '  ' } })).toBeNull();
+  });
+  test('reads a plan\'s steps nested by indent, up to the next section', () => {
+    const body = '# Plan\n\nIntro\n\n## Steps\n- [x] Phase 0 Decisions: check only\n  - [x] Step 0.1 Check\n  - [ ] Step 0.2 Record\n    - [X] Detail\n- [ ] Phase 1 Scaffold\n\n## Notes\n- [ ] not a step\n';
+    expect(planSteps(body)).toEqual([
+      { text: 'Phase 0 Decisions: check only', done: true, steps: [
+        { text: 'Step 0.1 Check', done: true, steps: [] },
+        { text: 'Step 0.2 Record', done: false, steps: [{ text: 'Detail', done: true, steps: [] }] },
+      ] },
+      { text: 'Phase 1 Scaffold', done: false, steps: [] },
+    ]);
+    expect(planSteps('no steps here\n- [ ] x')).toEqual([]);
+    expect(readPlan({ plan: { title: 'P' }, steps: [{ text: ' A ', done: true, steps: [{ text: 'B' }, { nope: 1 }] }, 'junk'] })?.steps)
+      .toEqual([{ text: 'A', done: true, steps: [{ text: 'B', done: false, steps: [] }] }]);
   });
 });
 

@@ -144,6 +144,80 @@ export const readBacklog = (raw: unknown): BacklogItem[] => {
   });
 };
 
+// ----- The plan a session works on, from OpenChamber's Project knowledge -----
+
+export type PlanStep = { text: string; done: boolean; steps: PlanStep[] };
+
+export type SessionPlan = { id: string; title: string; done: number; total: number; how: 'linked' | 'edited'; at: number; steps: PlanStep[] };
+
+const STEP_LINE = /^(\s*)[-*] \[([ xX])\]\s+(.*\S)\s*$/;
+const MAX_PLAN_STEPS = 400;
+
+/** The checklist under a plan's `## Steps` heading, nested by indent, up to the next section. */
+export const planSteps = (body: string): PlanStep[] => {
+  const lines = body.replace(/\r/g, '').split('\n');
+  const start = lines.findIndex((line) => /^##\s+Steps\b/i.test(line));
+  if (start < 0) return [];
+  const top: PlanStep[] = [];
+  const stack: { indent: number; steps: PlanStep[] }[] = [];
+  let count = 0;
+  for (const line of lines.slice(start + 1)) {
+    if (/^#{1,2}\s/.test(line)) break;
+    const match = STEP_LINE.exec(line);
+    if (!match) continue;
+    const indent = (match[1] ?? '').replace(/\t/g, '  ').length;
+    while (stack.length > 0 && indent <= (stack[stack.length - 1]?.indent ?? -1)) stack.pop();
+    const step: PlanStep = { text: match[3] ?? '', done: match[2] !== ' ', steps: [] };
+    (stack[stack.length - 1]?.steps ?? top).push(step);
+    stack.push({ indent, steps: step.steps });
+    count += 1;
+    if (count >= MAX_PLAN_STEPS) break;
+  }
+  return top;
+};
+
+const readSteps = (raw: unknown, depth = 0): PlanStep[] => (
+  Array.isArray(raw) && depth < 6
+    ? raw.flatMap((entry) => (isRecord(entry) && typeof entry.text === 'string' && entry.text.trim() !== ''
+      ? [{ text: entry.text.trim(), done: entry.done === true, steps: readSteps(entry.steps, depth + 1) }]
+      : []))
+    : []
+);
+
+export const readPlan = (raw: unknown): SessionPlan | null => {
+  if (!isRecord(raw) || !isRecord(raw.plan)) return null;
+  const plan = raw.plan;
+  const title = typeof plan.title === 'string' ? plan.title.trim() : '';
+  if (!title) return null;
+  const progress = isRecord(plan.progress) ? plan.progress : {};
+  const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
+  return { id: String(plan.id ?? title), title, done: count(progress.done), total: count(progress.total), how: raw.how === 'linked' ? 'linked' : 'edited', at: typeof raw.at === 'number' ? raw.at : 0, steps: readSteps(raw.steps) };
+};
+
+/** The session a plan was last sent to, in whichever shape the host gives it. */
+export const planSessionId = (session: unknown): string | null => {
+  if (typeof session === 'string') return session || null;
+  if (!isRecord(session)) return null;
+  const id = [session.id, session.sessionId, session.sessionID].find((value): value is string => typeof value === 'string' && value !== '');
+  return id ?? null;
+};
+
+const WRITE_TOOLS = new Set(['edit', 'write', 'patch', 'apply_patch', 'multiedit']);
+
+/** Whether a stored assistant message edits `file`: a writing tool call whose input names it. */
+export const editsFile = (data: string, file: string): boolean => {
+  let message: unknown;
+  try { message = JSON.parse(data); } catch { return false; }
+  if (!isRecord(message) || !Array.isArray(message.content)) return false;
+  const named = new RegExp(`[\\\\/]${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.-])`);
+  return message.content.some((part) => {
+    if (!isRecord(part) || part.type !== 'tool' || typeof part.name !== 'string') return false;
+    const input = JSON.stringify((isRecord(part.state) ? part.state.input : undefined) ?? part.input ?? '');
+    const writes = WRITE_TOOLS.has(part.name) || (part.name === 'execute' && input.includes('tools.edit'));
+    return writes && named.test(input);
+  });
+};
+
 // ----- Subagents, at any depth -----
 
 export const MAX_SUBAGENT_DEPTH = 4;

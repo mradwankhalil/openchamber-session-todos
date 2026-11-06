@@ -42,6 +42,62 @@ var todosForSession = (file, sessionId) => {
   return readTodos(file[sessionId]);
 };
 var readsOwnFile = (createdAt, switchedAt) => switchedAt === undefined || createdAt === null || createdAt < switchedAt;
+var STEP_LINE = /^(\s*)[-*] \[([ xX])\]\s+(.*\S)\s*$/;
+var MAX_PLAN_STEPS = 400;
+var planSteps = (body) => {
+  const lines = body.replace(/\r/g, "").split(`
+`);
+  const start = lines.findIndex((line) => /^##\s+Steps\b/i.test(line));
+  if (start < 0)
+    return [];
+  const top = [];
+  const stack = [];
+  let count = 0;
+  for (const line of lines.slice(start + 1)) {
+    if (/^#{1,2}\s/.test(line))
+      break;
+    const match = STEP_LINE.exec(line);
+    if (!match)
+      continue;
+    const indent = (match[1] ?? "").replace(/\t/g, "  ").length;
+    while (stack.length > 0 && indent <= (stack[stack.length - 1]?.indent ?? -1))
+      stack.pop();
+    const step = { text: match[3] ?? "", done: match[2] !== " ", steps: [] };
+    (stack[stack.length - 1]?.steps ?? top).push(step);
+    stack.push({ indent, steps: step.steps });
+    count += 1;
+    if (count >= MAX_PLAN_STEPS)
+      break;
+  }
+  return top;
+};
+var planSessionId = (session) => {
+  if (typeof session === "string")
+    return session || null;
+  if (!isRecord(session))
+    return null;
+  const id = [session.id, session.sessionId, session.sessionID].find((value) => typeof value === "string" && value !== "");
+  return id ?? null;
+};
+var WRITE_TOOLS = new Set(["edit", "write", "patch", "apply_patch", "multiedit"]);
+var editsFile = (data, file) => {
+  let message;
+  try {
+    message = JSON.parse(data);
+  } catch {
+    return false;
+  }
+  if (!isRecord(message) || !Array.isArray(message.content))
+    return false;
+  const named = new RegExp(`[\\\\/]${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w.-])`);
+  return message.content.some((part) => {
+    if (!isRecord(part) || part.type !== "tool" || typeof part.name !== "string")
+      return false;
+    const input = JSON.stringify((isRecord(part.state) ? part.state.input : undefined) ?? part.input ?? "");
+    const writes = WRITE_TOOLS.has(part.name) || part.name === "execute" && input.includes("tools.edit");
+    return writes && named.test(input);
+  });
+};
 var NOT_TAGS = new Set(["FIX", "TODO", "NOTE", "WIP"]);
 var MAX_REVISIONS = 200;
 var sameList = (left, right) => left.length === right.length && left.every((todo, index) => todo.content === right[index]?.content && todo.status === right[index]?.status);
@@ -1042,6 +1098,26 @@ var sessionTitle = async (sessionId, directory) => {
     return { title: null, agent: null, cost: null };
   }
 };
+var lastEditor = (sessionId, file) => {
+  const db = databaseFor(sessionId);
+  if (!db)
+    return null;
+  return withDb(db, (handle) => {
+    const names = tables(handle);
+    if (!names.has("session_message") || !names.has("session_v2"))
+      return null;
+    const rows = handle.prepare(`SELECT session_id AS id, data, time_created AS at FROM session_message
+      WHERE type = 'assistant' AND data LIKE ? AND session_id IN (
+        SELECT id FROM session_v2 WHERE parent_id IS NULL AND project_id = (SELECT project_id FROM session_v2 WHERE id = ?))
+      ORDER BY time_created DESC LIMIT 80`).all(`%${file}%`, sessionId);
+    for (const row of rows)
+      if (editsFile(String(row.data), file))
+        return { id: String(row.id), at: Number(row.at) || 0 };
+    return null;
+  });
+};
+var planCache = new Map;
+var PLAN_FRESH_MS = 30000;
 var claims = new Map;
 var sessionList = null;
 var SESSIONS_FRESH_MS = 15000;
@@ -1100,6 +1176,43 @@ var routes = {
       return { todos: [] };
     const answer = await api(`/api/project-context/${encodeURIComponent(id)}`).catch(() => null);
     return { todos: answer?.status === 200 && isRecord(answer.body) && Array.isArray(answer.body.todos) ? answer.body.todos : [] };
+  },
+  "/v1/plan": async (body) => {
+    const projectId = typeof body.projectId === "string" ? body.projectId : "";
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : "";
+    if (!projectId || !sessionId)
+      return { plan: null };
+    const key = `${projectId}:${sessionId}`;
+    const hit = planCache.get(key);
+    if (hit && Date.now() - hit.at < PLAN_FRESH_MS)
+      return hit.value;
+    const answer = await api(`/api/project-context/${encodeURIComponent(projectId)}`).catch(() => null);
+    const plans = answer?.status === 200 && isRecord(answer.body) && Array.isArray(answer.body.plans) ? answer.body.plans.filter(isRecord) : [];
+    let value = { plan: null };
+    const linked = plans.find((plan) => planSessionId(plan.session) === sessionId);
+    if (linked)
+      value = { plan: linked, how: "linked" };
+    else if (settings.useDatabase) {
+      let best = null;
+      for (const plan of plans) {
+        if (planSessionId(plan.session) || typeof plan.file !== "string")
+          continue;
+        const editor = lastEditor(sessionId, plan.file);
+        if (editor?.id === sessionId && (!best || editor.at > best.at))
+          best = { plan, at: editor.at };
+      }
+      if (best)
+        value = { plan: best.plan, how: "edited", at: best.at };
+    }
+    if (isRecord(value.plan) && typeof value.plan.id === "string") {
+      const full = await api(`/api/project-context/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(value.plan.id)}`).catch(() => null);
+      const text2 = full?.status === 200 && isRecord(full.body) && typeof full.body.body === "string" ? full.body.body : "";
+      value = { ...value, steps: planSteps(text2) };
+    }
+    planCache.set(key, { at: Date.now(), value });
+    if (planCache.size > 200)
+      planCache.delete(planCache.keys().next().value);
+    return value;
   },
   "/v1/sessions": async () => {
     if (sessionList && Date.now() - sessionList.at < SESSIONS_FRESH_MS)

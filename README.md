@@ -134,6 +134,8 @@ A managed or organisation-wide config can force the setting off. The setup check
 
 ### Optional: keep agents' todos on the session's list
 
+The page has three boxes, each folding from its title: **This session** (its name and ID, each with a copy button, then its todo groups and your own items), **Subagents**, and **Plans**. If the session works on a plan from Project knowledge, the Plans box shows its title, how many steps are done, and its phases and steps; phases with work left start unfolded and finished ones folded. Click the title to open Project knowledge. It is the plan OpenChamber sent to this session or, when none was sent, the plan file this session was the last top-level session to edit.
+
 Asked to track something, an agent may save it to OpenChamber's project backlog instead of the session's list. Those items appear under **Project Todos Backlog**, one line each: click one to read all of it, or the arrow to open Project knowledge. To keep them on the session's list instead, choose **Keep them on the session's list** in the setup check. That adds one small OpenCode plugin file, which you can remove with **Stop doing this**. It only blocks new backlog todos created by agents. Notes, plans and the Project panel are untouched.
 
 ## Updating

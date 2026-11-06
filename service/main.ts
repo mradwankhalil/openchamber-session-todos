@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 
-import { appendRevision, isRecord, parseTodosFile, readTodos, readsOwnFile, todosForSession, type Revision, type Todo } from '../shared/model.ts';
+import { appendRevision, editsFile, isRecord, parseTodosFile, planSessionId, planSteps, readTodos, readsOwnFile, todosForSession, type Revision, type Todo } from '../shared/model.ts';
 import { DEFAULTS, readSettings, type Settings } from '../shared/settings.ts';
 import {
   MIN_OPENCODE,
@@ -477,6 +477,25 @@ const sessionTitle = async (sessionId: string, directory: string | null): Promis
 
 // ----- Routes -----
 
+// The top-level session in this session's project that last edited `file`, from OpenCode's own record.
+const lastEditor = (sessionId: string, file: string): { id: string; at: number } | null => {
+  const db = databaseFor(sessionId);
+  if (!db) return null;
+  return withDb(db, (handle) => {
+    const names = tables(handle);
+    if (!names.has('session_message') || !names.has('session_v2')) return null;
+    const rows = handle.prepare(`SELECT session_id AS id, data, time_created AS at FROM session_message
+      WHERE type = 'assistant' AND data LIKE ? AND session_id IN (
+        SELECT id FROM session_v2 WHERE parent_id IS NULL AND project_id = (SELECT project_id FROM session_v2 WHERE id = ?))
+      ORDER BY time_created DESC LIMIT 80`).all(`%${file}%`, sessionId);
+    for (const row of rows) if (editsFile(String(row.data), file)) return { id: String(row.id), at: Number(row.at) || 0 };
+    return null;
+  });
+};
+
+const planCache = new Map<string, { at: number; value: Record<string, unknown> }>();
+const PLAN_FRESH_MS = 30000;
+
 const claims = new Map<string, number>();
 let sessionList: { at: number; value: unknown[] } | null = null;
 const SESSIONS_FRESH_MS = 15000;
@@ -530,6 +549,38 @@ const routes: Record<string, (body: Record<string, unknown>) => Promise<unknown>
     if (!id) return { todos: [] };
     const answer = await api(`/api/project-context/${encodeURIComponent(id)}`).catch(() => null);
     return { todos: answer?.status === 200 && isRecord(answer.body) && Array.isArray(answer.body.todos) ? answer.body.todos : [] };
+  },
+  // The plan this session works on: the one OpenChamber sent to it, else the plan file it was the last
+  // top-level session to edit. A plan sent to another session is that session's.
+  '/v1/plan': async (body) => {
+    const projectId = typeof body.projectId === 'string' ? body.projectId : '';
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+    if (!projectId || !sessionId) return { plan: null };
+    const key = `${projectId}:${sessionId}`;
+    const hit = planCache.get(key);
+    if (hit && Date.now() - hit.at < PLAN_FRESH_MS) return hit.value;
+    const answer = await api(`/api/project-context/${encodeURIComponent(projectId)}`).catch(() => null);
+    const plans = answer?.status === 200 && isRecord(answer.body) && Array.isArray(answer.body.plans) ? answer.body.plans.filter(isRecord) : [];
+    let value: Record<string, unknown> = { plan: null };
+    const linked = plans.find((plan) => planSessionId(plan.session) === sessionId);
+    if (linked) value = { plan: linked, how: 'linked' };
+    else if (settings.useDatabase) {
+      let best: { plan: Record<string, unknown>; at: number } | null = null;
+      for (const plan of plans) {
+        if (planSessionId(plan.session) || typeof plan.file !== 'string') continue;
+        const editor = lastEditor(sessionId, plan.file);
+        if (editor?.id === sessionId && (!best || editor.at > best.at)) best = { plan, at: editor.at };
+      }
+      if (best) value = { plan: best.plan, how: 'edited', at: best.at };
+    }
+    if (isRecord(value.plan) && typeof value.plan.id === 'string') {
+      const full = await api(`/api/project-context/${encodeURIComponent(projectId)}/plans/${encodeURIComponent(value.plan.id)}`).catch(() => null);
+      const text = full?.status === 200 && isRecord(full.body) && typeof full.body.body === 'string' ? full.body.body : '';
+      value = { ...value, steps: planSteps(text) };
+    }
+    planCache.set(key, { at: Date.now(), value });
+    if (planCache.size > 200) planCache.delete(planCache.keys().next().value as string);
+    return value;
   },
   '/v1/sessions': async () => {
     if (sessionList && Date.now() - sessionList.at < SESSIONS_FRESH_MS) return { sessions: sessionList.value };

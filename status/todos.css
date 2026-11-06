@@ -214,8 +214,6 @@ kbd { padding: 0 4px; border-radius: 4px; background: var(--hover); color: var(-
 /* A heading's items, under its caret */
 .gitems { margin: 0 0 4px calc(6px + .5em); padding-left: 10px; border-left: 1px solid var(--line); }
 .g-sub { height: auto; margin-top: 14px; padding-top: 10px; padding-bottom: 4px; border-top: 1px solid var(--line); border-radius: 0; color: var(--info); font-size: 1em; font-weight: 650; }
-.sub-sep { height: 0; margin: 16px 0 4px; border-top: 1px solid color-mix(in srgb, var(--fg) 32%, transparent); }
-.sub-sep + .g-sub { margin-top: 0; border-top: 0; }
 .g-sub .n { padding: 0 7px; border-radius: 9px; background: color-mix(in srgb, var(--info) 16%, transparent); color: var(--info); font-weight: 600; }
 .addrow { display: flex; gap: 6px; padding: 4px 0 4px 6px; }
 .addrow input { flex: 1; min-width: 0; height: 28px; padding: 0 8px; }
@@ -233,6 +231,44 @@ kbd { padding: 0 4px; border-radius: 4px; background: var(--hover); color: var(-
 .hist-child { padding: 4px 0 10px 6px; }
 .hist-child .ident { margin-top: 2px; }
 /* The project backlog: OpenChamber's list, set apart from the session's */
+.plan-line { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 8px 0 0; color: var(--muted); font-size: .9em; }
+.plan-title { min-width: 0; margin: 0; color: var(--fg); font-weight: 560; }
+.plan-bar { flex: none; width: 72px; height: 5px; overflow: hidden; border-radius: 3px; background: var(--bar-open); }
+.plan-bar i { display: block; height: 100%; border-radius: 3px; background: var(--bar-done); }
+.plan-line .num { flex: none; }
+.plan-how { flex: none; color: var(--faint); font-size: .92em; white-space: nowrap; }
+/* This session: three boxes, This session, Subagents and Plans, each folding from its title. */
+.sbox { margin: 0 0 10px; border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--raised) 50%, transparent); }
+.sbox-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border-radius: 9px; color: var(--fg); font-size: 1.16em; font-weight: 650; text-align: left; }
+.sbox-head:hover { background: var(--hover); }
+.sbox-head .n { color: var(--faint); font-size: .8em; font-weight: 450; font-variant-numeric: tabular-nums; }
+.sbox-head .car { display: grid; place-items: center; width: 1em; flex: none; color: var(--faint); transition: transform .16s; }
+.sbox-head[aria-expanded="false"] .car { transform: rotate(-90deg); }
+.sbox-body { padding: 0 10px 8px 24px; }
+.sbox .g-sub { margin-top: 2px; padding-top: 0; border-top: 0; }
+.sbox .g-sub ~ .g-sub { margin-top: 10px; }
+.sid { margin: 0 0 8px; color: var(--muted); }
+.sid-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sid-k { flex: none; color: var(--faint); }
+.sid-gap { margin-left: 14px; }
+.sid-name { flex: 0 1 auto; }
+.sid-v { min-width: 0; color: var(--muted); font: inherit; user-select: text; }
+.sid code.sid-v { font-family: var(--oc-mono, ui-monospace, monospace); }
+.sid-both { display: inline-flex; flex: none; align-items: center; gap: 4px; margin-left: auto; padding: 2px 6px; border-radius: 6px; color: var(--muted); }
+.sid-both:hover { background: var(--hover); color: var(--fg); }
+.plan-top { min-width: 0; }
+.plan-top .plan-title { max-width: 100%; font-weight: 600; }
+.sbox .plan-line { margin-top: 4px; }
+.sbox .plan-bar { flex: 1; width: auto; min-width: 60px; }
+.psteps { margin-top: 8px; }
+.pstep { display: flex; align-items: center; gap: 8px; width: 100%; min-height: calc(var(--todo-row) - 2px); padding-right: 6px; border-radius: 6px; color: var(--fg); text-align: left; }
+button.pstep:hover { background: var(--hover); }
+.pstep.sub { color: var(--muted); }
+.pstep .car { display: grid; place-items: center; width: 1em; flex: none; color: var(--faint); transition: transform .16s; }
+.pstep[aria-expanded="false"] .car { transform: rotate(-90deg); }
+.pbox { flex: none; width: .9em; height: .9em; border: 1.5px solid var(--faint); border-radius: 3px; }
+.pstep.done .pbox { border-color: var(--c-done); background: var(--c-done); }
+.pstep .num { flex: none; color: var(--faint); }
 .bl-head { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
 .bl-head .ghead { flex: 1; min-width: 0; }
 .bl-title { flex: none; color: var(--err); }

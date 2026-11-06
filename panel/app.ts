@@ -22,12 +22,15 @@ import {
   pruneMarks,
   quietNotice,
   readBacklog,
+  readPlan,
   readMarks,
   readTodos,
   resolveDepth,
   sessionState,
   toMarkdown,
   type BacklogItem,
+  type PlanStep,
+  type SessionPlan,
   type DroppedItem,
   type Filter,
   type Marks,
@@ -42,7 +45,7 @@ import { createWorkspace } from '../shared/workspace.ts';
 import { MAIN_TIMELINE, viewHistory } from './views/history.ts';
 import { inspector } from './views/inspector.ts';
 import { viewOverview, type Lists } from './views/overview.ts';
-import { columnHandle, pageTop, sessionIdentity, treed } from './views/parts.ts';
+import { columnHandle, pageTop, sessionLines, treed } from './views/parts.ts';
 import { viewSettings } from './views/settings.ts';
 import { viewSetup, type Report } from './views/setup.ts';
 
@@ -77,6 +80,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     childRevisions: {} as Record<string, Revision[]>,
     historyChildren: {} as Record<string, boolean>,
     backlog: [] as BacklogItem[],
+    plan: null as SessionPlan | null,
     backlogShown: null as string | null,
     children: [] as { id: string; title: string; agent: string; activity: string; updatedAt: number; depth: number; todos: TodoView[] }[],
     configuredDepth: null as number | null,
@@ -130,6 +134,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     state.childRevisions = {};
     state.historyChildren = {};
     state.backlogShown = null;
+    state.plan = null;
     state.query = '';
     state.marks = EMPTY_MARKS;
     state.own = [];
@@ -241,6 +246,19 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       const answer = await service(host, '/v1/backlog', { projectId });
       if (feed.session?.id !== id) return;
       state.backlog = readBacklog(answer);
+      render();
+    } catch { /* an addition; the session's own list is untouched */ }
+  };
+
+  const loadPlan = async (): Promise<void> => {
+    const id = feed.session?.id;
+    if (!id) return;
+    const projectId = workspace.byId(id)?.projectId ?? (feed.directory ? pathProjectId(feed.directory) : undefined);
+    if (!projectId) return;
+    try {
+      const answer = await service(host, '/v1/plan', { projectId, sessionId: id });
+      if (feed.session?.id !== id) return;
+      state.plan = readPlan(answer);
       render();
     } catch { /* an addition; the session's own list is untouched */ }
   };
@@ -552,6 +570,54 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     return h('button', { type: 'button', class: 'ref trunc', title: `Open ${id}`, onClick: (event: Event) => { event.stopPropagation(); actions.openSession(id); } }, title);
   };
 
+  // A section of this page: a box whose title folds it. Open until the user folds it.
+  const sectionBox = (key: string, title: string, count: number | null, body: HTMLElement[]): HTMLElement => {
+    const open = actions.isOpen(key, true);
+    return h('section', { class: 'sbox' },
+      h('button', { type: 'button', class: 'sbox-head', 'aria-expanded': String(open), onClick: () => actions.setFold(key, !open) },
+        h('span', { class: 'car' }, icon('caret')), h('span', { class: 'sbox-title' }, title), count !== null ? h('span', { class: 'n' }, String(count)) : null),
+      ...(open ? [h('div', { class: 'sbox-body' }, ...body)] : []));
+  };
+
+  // A phase's short name: the part before its first ": ". The whole text is its hover text.
+  const stepLabel = (text: string): string => {
+    const cut = text.indexOf(': ');
+    return cut >= 3 ? text.slice(0, cut) : text;
+  };
+  const PLAN_INDENT_PX = 22;
+
+  // The plan this session works on, from Project knowledge, with its steps.
+  // Phases with work left start unfolded and finished ones folded.
+  const planBody = (plan: SessionPlan): HTMLElement[] => {
+    const step = (item: PlanStep, path: string, level: number): HTMLElement[] => {
+      const key = `plan:${plan.id}:${path}`;
+      const nested = item.steps.length > 0;
+      const open = nested && actions.isOpen(key, !item.done);
+      const parts = [
+        h('span', { class: 'car' }, nested ? icon('caret') : null),
+        h('span', { class: 'pbox', role: 'img', 'aria-label': item.done ? 'Done' : 'Not done' }),
+        h('span', { class: 'grow trunc' }, level === 0 ? stepLabel(item.text) : item.text),
+        nested ? h('span', { class: 'num small' }, `${item.steps.filter((child) => child.done).length}/${item.steps.length}`) : null,
+      ];
+      const props = { class: `pstep${item.done ? ' done' : ''}${level > 0 ? ' sub' : ''}`, style: `padding-left:${6 + level * PLAN_INDENT_PX}px`, title: item.text };
+      const line = nested
+        ? h('button', { ...props, type: 'button', 'aria-expanded': String(open), onClick: () => actions.setFold(key, !open) }, ...parts)
+        : h('div', props, ...parts);
+      return [line, ...(open ? item.steps.flatMap((child, index) => step(child, `${path}.${index}`, level + 1)) : [])];
+    };
+    return [
+      h('div', { class: 'plan-top' },
+        h('button', { type: 'button', class: 'ref trunc plan-title', title: `${plan.title}: open Project knowledge`, onClick: () => actions.openBacklog() }, plan.title)),
+      planLine(plan),
+      ...(plan.steps.length > 0 ? [h('div', { class: 'psteps' }, ...plan.steps.flatMap((item, index) => step(item, String(index), 0)))] : []),
+    ];
+  };
+
+  const planLine = (plan: SessionPlan): HTMLElement => h('div', { class: 'plan-line' },
+    plan.total > 0 ? h('span', { class: 'plan-bar', role: 'progressbar', 'aria-label': 'Plan steps done', 'aria-valuemin': '0', 'aria-valuemax': String(plan.total), 'aria-valuenow': String(plan.done) }, h('i', { style: `width:${Math.round((plan.done / plan.total) * 100)}%` })) : null,
+    plan.total > 0 ? h('span', { class: 'num' }, `${plan.done}/${plan.total}`) : null,
+    h('span', { class: 'plan-how', title: plan.how === 'linked' ? 'OpenChamber sent this plan to this session.' : 'No session is linked to this plan in OpenChamber; this is the top-level session that last edited its file.' }, plan.how === 'linked' ? 'sent to this session' : `last edited here${plan.at ? ` ${ago(plan.at, Date.now())}` : ''}`));
+
   const listView = (): HTMLElement[] => {
     const settings = feed.settings;
     const all = views();
@@ -566,7 +632,6 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     const live = notice();
     const head = h('div', { class: 'p-head' },
       pageTop('This session', all.length ? countLabel(counts) : null),
-      sessionIdentity(session, actions.copy),
       h('div', { class: 'p-sub' },
         session.agent ? h('span', null, session.agent) : null,
         project ? h('span', null, project) : null,
@@ -575,7 +640,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       all.length ? progressBar(counts) : null,
       live ? noticeLine(live, Date.now()) : null);
 
-    if (view.kind === 'problem') return [head, h('p', { class: 'empty problem', style: 'padding:0 0 14px' }, view.message)];
+    if (view.kind === 'problem') return [head, sessionLines(session, actions.copy), h('p', { class: 'empty problem', style: 'padding:0 0 14px' }, view.message)];
 
     const markPriority = settings.priority && mixedPriorities(all);
     const filtered = filterViews(all, state.filter, state.query);
@@ -664,10 +729,14 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       }
     }
 
-    // Other sessions' lists: visibly separate, each with its own label.
+    // Other sessions' lists: their own box, each with its own label.
+    const subs: HTMLElement[] = [];
+    let subCount = 0;
     const subagentSection = (label: string, rows: ReturnType<typeof subagentsFor<(typeof state.children)[number]>>): void => {
       if (rows.length === 0) return;
-      list.push(h('div', { class: 'ghead g-sub' }, h('span', { class: 'car' }, icon('tree')), label, h('span', { class: 'n' }, String(rows.filter((child) => child.shown.length > 0).length))));
+      const shownCount = rows.filter((child) => child.shown.length > 0).length;
+      subCount += shownCount;
+      subs.push(h('div', { class: 'ghead g-sub' }, h('span', { class: 'car' }, icon('tree')), label, h('span', { class: 'n' }, String(shownCount))));
       let hideBelow = Infinity;
       rows.forEach((child) => {
         if (child.depth > hideBelow) return;
@@ -676,32 +745,36 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
         const open = state.folds[key] ?? false;
         if (!open) hideBelow = child.depth;
         const childCounts = countViews(child.todos);
-        list.push(treed(child.depth, h('button', { type: 'button', class: 'subhead', 'aria-expanded': String(open), title: child.depth > 1 ? `Level ${child.depth} subagent` : undefined, onClick: () => actions.setFold(key, !open) },
+        subs.push(treed(child.depth, h('button', { type: 'button', class: 'subhead', 'aria-expanded': String(open), title: child.depth > 1 ? `Level ${child.depth} subagent` : undefined, onClick: () => actions.setFold(key, !open) },
           h('span', { class: 'car' }, icon('caret')), h('span', { class: `dot ${child.activity}`, title: child.activity }), h('span', { class: 'grow trunc', title: child.title }, child.title),
           child.agent ? h('span', { class: 'muted small' }, child.agent) : null,
           childCounts.total > 0 ? h('span', { class: 'mini' }, progressBar(childCounts)) : null,
           childCounts.total > 0 ? h('span', { class: 'num small' }, `${childCounts.done}/${childCounts.total}`) : null)));
         if (open) {
           const line = (item: TodoView, depth: number): HTMLElement => treed(depth, todoRow(item, { oneLine: true, tags: settings.tags ? 'show' : 'hide', markPriority: false }));
-          for (const item of child.shown) list.push(line(item, child.depth + 1));
+          for (const item of child.shown) subs.push(line(item, child.depth + 1));
           if (child.tucked.length > 0) {
             const tuckKey = `${key}:cancelled`;
             const tuckOpen = state.folds[tuckKey] ?? false;
-            list.push(treed(child.depth + 1, h('button', { type: 'button', class: 'ghead', 'aria-expanded': String(tuckOpen), onClick: () => actions.setFold(tuckKey, !tuckOpen) }, h('span', { class: 'car' }, icon('caret')), 'Cancelled', h('span', { class: 'n' }, String(child.tucked.length)))));
-            if (tuckOpen) for (const item of child.tucked) list.push(line(item, child.depth + 2));
+            subs.push(treed(child.depth + 1, h('button', { type: 'button', class: 'ghead', 'aria-expanded': String(tuckOpen), onClick: () => actions.setFold(tuckKey, !tuckOpen) }, h('span', { class: 'car' }, icon('caret')), 'Cancelled', h('span', { class: 'n' }, String(child.tucked.length)))));
+            if (tuckOpen) for (const item of child.tucked) subs.push(line(item, child.depth + 2));
           }
-          list.push(treed(child.depth + 1, h('button', { type: 'button', class: 'more', style: 'padding-left:6px', onClick: () => actions.openSession(child.id) }, 'Open this session')));
+          subs.push(treed(child.depth + 1, h('button', { type: 'button', class: 'more', style: 'padding-left:6px', onClick: () => actions.openSession(child.id) }, 'Open this session')));
         }
       });
     };
     if (!state.query) {
       const sections = subagentSections(subagentsFor(state.children, state.filter));
-      if (sections.active.length + sections.idle.length > 0) list.push(h('div', { class: 'sub-sep', role: 'separator' }));
       subagentSection('Active subagents', sections.active);
       subagentSection('Idle subagents', sections.idle);
     }
 
     const selected = all.find((item) => item.key === state.selected) ?? null;
+    const boxes: HTMLElement[] = [
+      sectionBox('sec:session', 'This session', null, [sessionLines(session, actions.copy), ...list]),
+      ...(subs.length > 0 ? [sectionBox('sec:subagents', 'Subagents', subCount, subs)] : []),
+      ...(state.plan ? [sectionBox('sec:plans', 'Plans', 1, planBody(state.plan))] : []),
+    ];
     return [
       head,
       h('div', { class: 'tools' },
@@ -710,7 +783,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
         h('input', { class: 'search', id: 'q', type: 'search', placeholder: 'Filter', value: state.query, 'aria-label': 'Filter this list', onInput: (event: Event) => actions.setQuery((event.target as HTMLInputElement).value) }),
         h('button', { type: 'button', class: 'ib', title: 'Copy as Markdown', 'aria-label': 'Copy as Markdown', onClick: () => actions.copyMarkdown() }, icon('copy'))),
       h('div', { class: `split${selected ? ' with-side' : ''}`, style: `--side-w:${settings.sideWidth}px` },
-        h('div', { class: 'list', role: 'listbox', 'aria-label': 'Todos' }, ...list),
+        h('div', { class: 'list', role: 'listbox', 'aria-label': 'Todos' }, ...boxes),
         selected ? columnHandle(feed) : null,
         selected ? h('aside', { class: 'insp side' }, ...inspector(ctx, selected)) : null),
       h('div', { class: 'keys' }, h('kbd', null, 'j'), ' ', h('kbd', null, 'k'), ' move · ', settings.ticking ? h('span', null, h('kbd', null, 'x'), ' tick · ') : null, h('kbd', null, 't'), ' tell the agent · ', h('kbd', null, '/'), ' filter · ', h('kbd', null, 'h'), ' history'),
@@ -851,6 +924,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       if (document.visibilityState === 'hidden') return;
       void loadChildren().then(loadChildHistories);
       void loadBacklog();
+      void loadPlan();
       void loadOwnState();
     }, SUBAGENTS_EVERY_MS);
     window.setInterval(() => {

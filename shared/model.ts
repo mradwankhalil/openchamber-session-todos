@@ -231,6 +231,12 @@ export const resolveDepth = (setting: DepthSetting, configured: number | null): 
 
 export type Descendant = { id: string; depth: number };
 
+/** The session that started `id`, from the same child-to-parent records the subagent tree uses. */
+export const parentOf = (id: string, parents: Record<string, unknown>): string | null => {
+  const parent = parents[id];
+  return typeof parent === 'string' && parent !== '' && parent !== id ? parent : null;
+};
+
 /** Everyone under `root`, parents before their children. A loop in the data can't trap this. */
 export const descendants = (root: string, parents: Record<string, unknown>, maxDepth: number, cap = 200): Descendant[] => {
   const children = new Map<string, string[]>();

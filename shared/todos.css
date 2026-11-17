@@ -146,6 +146,12 @@ html[data-motion="off"] ::view-transition-group(*) { animation: none !important;
 /* Panel */
 .panel { container-type: inline-size; min-height: 100vh; }
 .p-head { padding: 0 0 8px; }
+.crumb-row { display: flex; justify-content: flex-end; margin: -2px 0 4px; }
+.crumb { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 8px; border-radius: 6px; font-size: 1em; color: var(--muted); }
+.crumb .i { flex: none; width: 1.25em; height: 1.25em; }
+.crumb-v { color: var(--info); min-width: 0; }
+.crumb:hover { color: var(--fg); background: var(--hover); }
+.crumb:hover .crumb-v { text-decoration: underline; }
 .page-top .cnt { font-size: 1.14em; font-weight: 650; }
 /* Which session, in words, with both values to hand */
 .ident { display: grid; grid-template-columns: max-content minmax(0, 1fr) auto; gap: 1px 12px; align-items: center; margin: 8px 0 6px; }

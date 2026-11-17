@@ -7,6 +7,7 @@ import {
   buildTree,
   countViews,
   descendants,
+  parentOf,
   droppedItems,
   filterViews,
   pruneTree,
@@ -362,6 +363,18 @@ describe('resolveDepth', () => {
   test('the user\'s choice wins, including none', () => {
     expect(resolveDepth(0, 3)).toBe(0);
     expect(resolveDepth(4, 1)).toBe(4);
+  });
+});
+
+describe('parentOf', () => {
+  test('gives the session that started this one', () => {
+    expect(parentOf('child', { child: 'lead', other: 'x' })).toBe('lead');
+  });
+  test('a top-level session, a broken entry or a self-link has no parent', () => {
+    expect(parentOf('lead', { child: 'lead' })).toBeNull();
+    expect(parentOf('child', { child: 42 })).toBeNull();
+    expect(parentOf('child', { child: '' })).toBeNull();
+    expect(parentOf('child', { child: 'child' })).toBeNull();
   });
 });
 

@@ -152,6 +152,7 @@ The version you are running is shown at the top left of the panel.
 - **Click a row** to see its full text and details.
 - **Filter** with All, Open or Done, or type in the filter box. Subagents follow the filter: Open lists those with work left and shows only that work, with cancelled items folded; Done lists those with finished items and shows only those. Each filter splits them into **Active subagents** (working, or waiting on you) and **Idle subagents**, with the most recent first. A subagent stays under the one that started it.
 - **Fold** subagents and groups. Top-level sessions start open and sub-sessions start folded. In Every session, Chats and other projects start folded and the project you are in starts unfolded all the way; folds there start over each time the panel opens.
+- **Go up to the parent.** On a subagent's list, **Parent** with the name of the session that started it sits on the right under the icons at the top. Click it, or press `u`, to open that session. Top-level sessions don't show it.
 - **Use the icons at the top of the panel:** This session, History, Every session and Settings.
 
 ## Settings

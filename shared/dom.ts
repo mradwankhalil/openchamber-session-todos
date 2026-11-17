@@ -30,6 +30,7 @@ const PATHS: Record<string, string> = {
   cancel: '<path fill="currentColor" stroke="none" fill-rule="evenodd" d="M12 3.15a8.85 8.85 0 1 0 0 17.7 8.85 8.85 0 0 0 0-17.7zM10.9 7.2h2.2v6.4h-2.2zM12 14.8a1.35 1.35 0 1 1 0 2.7 1.35 1.35 0 0 1 0-2.7z"/>',
   gone: '<circle cx="12" cy="12" r="8" stroke-dasharray="2.4 3"/>',
   caret: '<path d="m6.5 9.5 5.5 5.5 5.5-5.5"/>',
+  back: '<path d="M19 12H5.5M11 6l-6 6 6 6"/>',
   alert: '<path d="M12 4 3.5 19h17z"/><path d="M12 10v4.4M12 17v.1"/>',
   quiet: '<circle cx="12" cy="12" r="8.4"/><path d="M12 7.5V12l3 2"/>',
   flag: '<path d="M6 21V4h11l-2.4 4 2.4 4H6"/>',

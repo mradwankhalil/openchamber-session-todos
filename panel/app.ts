@@ -8,6 +8,7 @@ import {
   applyMarks,
   countViews,
   descendants,
+  parentOf,
   droppedItems,
   filterViews,
   subagentSections,
@@ -84,6 +85,8 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     backlogShown: null as string | null,
     children: [] as { id: string; title: string; agent: string; activity: string; updatedAt: number; depth: number; todos: TodoView[] }[],
     configuredDepth: null as number | null,
+    // The session that started this one, when it is a subagent.
+    parentId: null as string | null,
     otherSessions: [] as GuestSessionRecord[],
     ownState: null as SessionState | null,
     lists: {} as Lists,
@@ -140,6 +143,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     state.own = [];
     state.revisions = [];
     state.children = [];
+    state.parentId = null;
     state.backlog = [];
     state.ownState = null;
     void loadSessionData();
@@ -206,6 +210,8 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
       // Two records of who started whom: the agent's file and the host's. Together they cover both worlds.
       const parents: Record<string, unknown> = { ...(isRecord(links.parents) ? links.parents : {}) };
       for (const session of [...workspace.sessions, ...state.otherSessions]) if (session.parentId) parents[session.id] = session.parentId;
+      const parent = parentOf(id, parents);
+      if (feed.session?.id === id && parent !== state.parentId) { state.parentId = parent; render(); }
       const tree = descendants(id, parents, resolveDepth(feed.settings.subagentDepth, state.configuredDepth));
       const depthOf = new Map(tree.map((item) => [item.id, item.depth]));
       const ids = tree.map((item) => item.id);
@@ -565,6 +571,15 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
 
   // ----- The list view -----
 
+  const sessionName = (id: string): string => (workspace.byId(id) ?? state.otherSessions.find((other) => other.id === id))?.title || id.slice(0, 12);
+
+  // Up one level: its own row, right-aligned under the view buttons.
+  const parentCrumb = (id: string): HTMLElement => {
+    const name = sessionName(id);
+    return h('button', { type: 'button', class: 'crumb', title: `Open the parent session: ${name} (u)`, 'aria-label': `Open the parent session: ${name}`, onClick: () => actions.openSession(id) },
+      icon('back'), h('span', null, 'Parent'), h('span', { class: 'crumb-v trunc' }, name));
+  };
+
   const refButton = (id: string): HTMLElement => {
     const title = workspace.byId(id)?.title ?? id.slice(0, 12);
     return h('button', { type: 'button', class: 'ref trunc', title: `Open ${id}`, onClick: (event: Event) => { event.stopPropagation(); actions.openSession(id); } }, title);
@@ -631,6 +646,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     const project = record ? workspace.projects.find((item) => item.id === record.projectId)?.name : null;
     const live = notice();
     const head = h('div', { class: 'p-head' },
+      state.parentId ? h('div', { class: 'crumb-row' }, parentCrumb(state.parentId)) : null,
       pageTop('This session', all.length ? countLabel(counts) : null),
       h('div', { class: 'p-sub' },
         session.agent ? h('span', null, session.agent) : null,
@@ -786,7 +802,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
         h('div', { class: 'list', role: 'listbox', 'aria-label': 'Todos' }, ...boxes),
         selected ? columnHandle(feed) : null,
         selected ? h('aside', { class: 'insp side' }, ...inspector(ctx, selected)) : null),
-      h('div', { class: 'keys' }, h('kbd', null, 'j'), ' ', h('kbd', null, 'k'), ' move · ', settings.ticking ? h('span', null, h('kbd', null, 'x'), ' tick · ') : null, h('kbd', null, 't'), ' tell the agent · ', h('kbd', null, '/'), ' filter · ', h('kbd', null, 'h'), ' history'),
+      h('div', { class: 'keys' }, h('kbd', null, 'j'), ' ', h('kbd', null, 'k'), ' move · ', settings.ticking ? h('span', null, h('kbd', null, 'x'), ' tick · ') : null, h('kbd', null, 't'), ' tell the agent · ', h('kbd', null, '/'), ' filter · ', h('kbd', null, 'h'), ' history', state.parentId ? h('span', null, ' · ', h('kbd', null, 'u'), ' parent') : null),
     ];
   };
 
@@ -847,6 +863,7 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     else if (event.key === 'k') actions.moveSelection(-1);
     else if (event.key === 'x') actions.tickSelected();
     else if (event.key === 't') actions.tellSelected();
+    else if (event.key === 'u' && state.parentId) actions.openSession(state.parentId);
     else if (event.key === '/') { event.preventDefault(); document.getElementById('q')?.focus(); }
     else return;
   });

@@ -361,10 +361,10 @@ const createApp = (host: Host, root: HTMLElement, surface: 'panel' | 'page', add
     },
     tell(view: TodoView) {
       const note = view.note ? ` ${view.note}` : '';
-      void actions.compose(`I finished this myself: "${view.content}".${note} Please update your todo list.`);
+      void actions.compose(`I finished this myself: "${view.content}".${note} Please update the todo list.`);
     },
     askWhy(item: DroppedItem) {
-      void actions.compose(`"${item.content}" left your todo list without a mention. Was that deliberate?`);
+      void actions.compose(`"${item.content}" left the todo list without a mention. Was that deliberate?`);
     },
     async copy(text: string, label: string) {
       try {
